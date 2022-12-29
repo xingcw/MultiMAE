@@ -13,3 +13,5 @@ runs/
 *.DS_Store
 notebooks/
 pretrained/
+
+*.egg-info
