@@ -25,9 +25,9 @@ from einops import rearrange, repeat
 from torch import nn
 from torch.distributions.dirichlet import Dirichlet
 
-from utils.registry import register_model
+from multimae.utils.registry import register_model
 
-from .multimae_utils import Block, trunc_normal_
+from multimae.multimae_utils import Block, trunc_normal_
 
 __all__ = [
     'pretrain_multimae_base',
