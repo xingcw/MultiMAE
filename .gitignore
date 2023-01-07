@@ -11,7 +11,7 @@ runs/
 .vscode/
 *.pth
 *.DS_Store
-notebooks/
+
 pretrained/
 
 *.egg-info

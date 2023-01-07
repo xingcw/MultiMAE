@@ -2,9 +2,9 @@ import torch
 import random
 from functools import partial
 from pathlib import Path
-from multimae.multimae import multivit_base
-from multimae.input_adapters import PatchedInputAdapter, SemSegInputAdapter
-from multimae.output_adapters import SpatialOutputAdapter
+from multimae.models.multimae import multivit_base
+from multimae.models.input_adapters import PatchedInputAdapter, SemSegInputAdapter
+from multimae.models.output_adapters import SpatialOutputAdapter
 from multimae.tools.multimae2vit_converter import multimae_to_vit
 from multimae.tools import multimae2vit_converter
 

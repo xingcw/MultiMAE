@@ -27,7 +27,7 @@ from torch.distributions.dirichlet import Dirichlet
 
 from multimae.utils.registry import register_model
 
-from multimae.multimae_utils import Block, trunc_normal_
+from multimae.models.multimae_utils import Block, trunc_normal_
 
 __all__ = [
     'pretrain_multimae_base',
