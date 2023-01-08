@@ -149,10 +149,13 @@ def plot_predictions(input_dict, preds, masks, image_size=224):
     grid[3].imshow(masked_depth)
     grid[4].imshow(pred_depth2)
     grid[5].imshow(input_dict['depth'][0,0].detach().cpu())
-
-    plot_semseg_gt_masked(input_dict, masks['semseg'], grid[6], mask_value=1.0, image_size=image_size)
-    plot_semseg_pred_masked(input_dict['rgb'], preds['semseg'], input_dict['semseg'], masks['semseg'], grid[7], image_size=image_size)
-    plot_semseg_gt(input_dict, grid[8], image_size=image_size)
+    
+    use_semseg = "semseg" in input_dict
+    
+    if use_semseg:
+        plot_semseg_gt_masked(input_dict, masks['semseg'], grid[6], mask_value=1.0, image_size=image_size)
+        plot_semseg_pred_masked(input_dict['rgb'], preds['semseg'], input_dict['semseg'], masks['semseg'], grid[7], image_size=image_size)
+        plot_semseg_gt(input_dict, grid[8], image_size=image_size)
 
     for ax in grid:
         ax.set_xticks([])
@@ -173,7 +176,7 @@ def plot_predictions(input_dict, preds, masks, image_size=224):
         'depth_input': masked_depth,
         'depth_pred': pred_depth2,
         'depth_gt': input_dict['depth'][0,0].detach().cpu(),
-        'semseg_input': plot_semseg_gt_masked(input_dict, masks['semseg'], mask_value=1.0),
-        'semseg_pred': plot_semseg_pred_masked(input_dict['rgb'], preds['semseg'], input_dict['semseg'], masks['semseg']),
-        'semseg_gt': plot_semseg_gt(input_dict)
+        'semseg_input': plot_semseg_gt_masked(input_dict, masks['semseg'], mask_value=1.0) if use_semseg else None,
+        'semseg_pred': plot_semseg_pred_masked(input_dict['rgb'], preds['semseg'], input_dict['semseg'], masks['semseg']) if use_semseg else None,
+        'semseg_gt': plot_semseg_gt(input_dict) if use_semseg else None
     }
