@@ -35,14 +35,14 @@ from einops import rearrange
 import utils
 import utils.data_constants as data_constants
 from multimae import multimae
-from multimae.input_adapters import PatchedInputAdapter
-from multimae.output_adapters import DPTOutputAdapter
-from utils import NativeScalerWithGradNormCount as NativeScaler
-from utils import create_model
-from utils.log_images import log_taskonomy_wandb
-from utils.optim_factory import LayerDecayValueAssigner, create_optimizer
-from utils.pos_embed import interpolate_pos_embed_multimae
-from utils.taskonomy import TaskonomyDataset
+from multimae.models.input_adapters import PatchedInputAdapter
+from multimae.models.output_adapters import DPTOutputAdapter
+from multimae.utils import NativeScalerWithGradNormCount as NativeScaler
+from multimae.utils import create_model
+from multimae.utils.log_images import log_taskonomy_wandb
+from multimae.utils.optim_factory import LayerDecayValueAssigner, create_optimizer
+from multimae.utils.pos_embed import interpolate_pos_embed_multimae
+from multimae.utils.taskonomy import TaskonomyDataset
 
 
 def masked_mse_loss(preds, target, mask_valid=None):

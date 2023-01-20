@@ -34,16 +34,16 @@ from einops import rearrange
 import utils
 import utils.data_constants as data_constants
 from multimae import multimae
-from multimae.criterion import (MaskedCrossEntropyLoss, MaskedL1Loss,
+from multimae.models.criterion import (MaskedCrossEntropyLoss, MaskedL1Loss,
                                 MaskedMSELoss)
-from multimae.input_adapters import PatchedInputAdapter, SemSegInputAdapter
-from multimae.output_adapters import SpatialOutputAdapter
-from utils import NativeScalerWithGradNormCount as NativeScaler
-from utils import create_model
-from utils.data_constants import COCO_SEMSEG_NUM_CLASSES
-from utils.datasets import build_multimae_pretraining_dataset
-from utils.optim_factory import create_optimizer
-from utils.task_balancing import (NoWeightingStrategy,
+from multimae.models.input_adapters import PatchedInputAdapter, SemSegInputAdapter
+from multimae.models.output_adapters import SpatialOutputAdapter
+from multimae.utils import NativeScalerWithGradNormCount as NativeScaler
+from multimae.utils import create_model
+from multimae.utils.data_constants import COCO_SEMSEG_NUM_CLASSES
+from multimae.utils.datasets import build_multimae_pretraining_dataset
+from multimae.utils.optim_factory import create_optimizer
+from multimae.utils.task_balancing import (NoWeightingStrategy,
                                   UncertaintyWeightingStrategy)
 
 DOMAIN_CONF = {

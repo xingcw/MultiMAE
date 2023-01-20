@@ -34,18 +34,18 @@ import yaml
 import utils
 import utils.data_constants as data_constants
 from multimae import multimae
-from multimae.input_adapters import PatchedInputAdapter, SemSegInputAdapter
-from multimae.output_adapters import (ConvNeXtAdapter, DPTOutputAdapter,
+from multimae.models.input_adapters import PatchedInputAdapter, SemSegInputAdapter
+from multimae.models.output_adapters import (ConvNeXtAdapter, DPTOutputAdapter,
                                       SegmenterMaskTransformerAdapter)
-from utils import NativeScalerWithGradNormCount as NativeScaler
-from utils import create_model
-from utils.data_constants import COCO_SEMSEG_NUM_CLASSES
-from utils.datasets_semseg import build_semseg_dataset, simple_transform
-from utils.dist import collect_results_cpu
-from utils.log_images import log_semseg_wandb
-from utils.optim_factory import LayerDecayValueAssigner, create_optimizer
-from utils.pos_embed import interpolate_pos_embed_multimae
-from utils.semseg_metrics import mean_iou
+from multimae.utils import NativeScalerWithGradNormCount as NativeScaler
+from multimae.utils import create_model
+from multimae.utils.data_constants import COCO_SEMSEG_NUM_CLASSES
+from multimae.utils.datasets_semseg import build_semseg_dataset, simple_transform
+from multimae.utils.dist import collect_results_cpu
+from multimae.utils.log_images import log_semseg_wandb
+from multimae.utils.optim_factory import LayerDecayValueAssigner, create_optimizer
+from multimae.utils.pos_embed import interpolate_pos_embed_multimae
+from multimae.utils.semseg_metrics import mean_iou
 
 DOMAIN_CONF = {
     'rgb': {

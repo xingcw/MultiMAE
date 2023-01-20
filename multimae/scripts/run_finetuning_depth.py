@@ -32,18 +32,18 @@ import torch.nn.functional as F
 import yaml
 from einops import rearrange
 
-import utils
-import utils.data_constants as data_constants
+import multimae.utils as utils
+import multimae.utils.data_constants as data_constants
 from multimae import multimae
-from multimae.input_adapters import PatchedInputAdapter
-from multimae.output_adapters import ConvNeXtAdapter, DPTOutputAdapter
-from utils import NativeScalerWithGradNormCount as NativeScaler
-from utils import create_model
-from utils.data_constants import NYU_MEAN, NYU_STD
-from utils.dataset_regression import build_regression_dataset, nyu_transform
-from utils.log_images import log_taskonomy_wandb
-from utils.optim_factory import LayerDecayValueAssigner, create_optimizer
-from utils.pos_embed import interpolate_pos_embed_multimae
+from multimae.models.input_adapters import PatchedInputAdapter
+from multimae.models.output_adapters import ConvNeXtAdapter, DPTOutputAdapter
+from multimae.utils import NativeScalerWithGradNormCount as NativeScaler
+from multimae.utils import create_model
+from multimae.utils.data_constants import NYU_MEAN, NYU_STD
+from multimae.utils.dataset_regression import build_regression_dataset, nyu_transform
+from multimae.utils.log_images import log_taskonomy_wandb
+from multimae.utils.optim_factory import LayerDecayValueAssigner, create_optimizer
+from multimae.utils.pos_embed import interpolate_pos_embed_multimae
 
 
 def masked_mse_loss(preds, target, mask_valid=None):
