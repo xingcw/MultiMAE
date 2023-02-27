@@ -27,18 +27,19 @@ except ImportError:
 
 def get_args():
     parser = argparse.ArgumentParser("Script to prepare NYUv2 dataset", add_help=True)
-    parser.add_argument('--dataset_path', type=str,
+    parser.add_argument('--dataset_path', type=str, default="/home/chunwei/Documents/drone_offboard/vision_backbones/MultiMAE/datasets/nyu/nyu_depth_v2_labeled.mat",
                         help="Path to the folder containing the NYUv2 dataset."
                              "Can be downloaded from: http://horatio.cs.nyu.edu/mit/silberman/nyu_depth_v2/nyu_depth_v2_labeled.mat")
-    parser.add_argument('--splits_path', type=str,
+    parser.add_argument('--splits_path', type=str, default="/home/chunwei/Documents/drone_offboard/vision_backbones/MultiMAE/datasets/nyu/splits.mat",
                         help="Path to the folder containing the splits. "
                              "Can be downloaded from: http://horatio.cs.nyu.edu/mit/silberman/indoor_seg_sup/splits.mat")
-    parser.add_argument('--class_mapping_path', type=str,
+    parser.add_argument('--class_mapping_path', type=str, default="/home/chunwei/Documents/drone_offboard/vision_backbones/MultiMAE/datasets/nyu/classMapping40.mat",
                         help="Path to the class mapping file. "
                              "Can be downloaded from: https://github.com/ankurhanda/nyuv2-meta-data/raw/master/classMapping40.mat ")
     parser.add_argument('--normals_path', type=str, default=None,
                         help="Path to the folder containing the normals")
-    parser.add_argument('--save_path', type=str, help="Path to where the dataset should be saved")
+    parser.add_argument('--save_path', type=str, default="/home/chunwei/Documents/drone_offboard/vision_backbones/MultiMAE/datasets/nyu/",
+                        help="Path to where the dataset should be saved")
     return parser.parse_args()
 
 class NYUv2Preprocessing(object):

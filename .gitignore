@@ -17,3 +17,6 @@ pretrained/
 *.egg-info
 build/
 dist/
+
+datasets/
+.VSCodeCounter/

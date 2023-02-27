@@ -331,10 +331,11 @@ def main(args):
 
     # Get dataset
     dataset_train = build_multimae_pretraining_dataset(args)
-
-    if True:  # args.distributed:
-        num_tasks = utils.get_world_size()
-        global_rank = utils.get_rank()
+    
+    num_tasks = utils.get_world_size()  # return 1 for non-distributed device
+    global_rank = utils.get_rank()      # return 0 for non-distributed device
+        
+    if args.distributed:
         sampler_rank = global_rank
         num_training_steps_per_epoch = len(dataset_train) // args.batch_size // num_tasks
 
