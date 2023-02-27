@@ -34,7 +34,7 @@ from einops import rearrange
 
 import multimae.utils as utils
 import multimae.utils.data_constants as data_constants
-from multimae import multimae
+from multimae.models import multimae
 from multimae.models.input_adapters import PatchedInputAdapter
 from multimae.models.output_adapters import ConvNeXtAdapter, DPTOutputAdapter
 from multimae.utils import NativeScalerWithGradNormCount as NativeScaler

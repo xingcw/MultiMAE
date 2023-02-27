@@ -31,9 +31,9 @@ import torch.backends.cudnn as cudnn
 import yaml
 from einops import rearrange
 
-import utils
-import utils.data_constants as data_constants
-from multimae import multimae
+import multimae.utils as utils
+import multimae.utils.data_constants as data_constants
+from multimae.models import multimae
 from multimae.models.criterion import (MaskedCrossEntropyLoss, MaskedL1Loss,
                                 MaskedMSELoss)
 from multimae.models.input_adapters import PatchedInputAdapter, SemSegInputAdapter

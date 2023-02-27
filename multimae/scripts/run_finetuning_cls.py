@@ -31,16 +31,16 @@ import torch
 import torch.backends.cudnn as cudnn
 import yaml
 
-import utils
-import utils.data_constants as data_constants
-from multimae import multimae
-from multimae.input_adapters import PatchedInputAdapter
-from multimae.output_adapters import LinearOutputAdapter
-from utils import LabelSmoothingCrossEntropy, Mixup, ModelEma
-from utils import NativeScalerWithGradNormCount as NativeScaler
-from utils import SoftTargetCrossEntropy, accuracy, create_model
-from utils.datasets import build_dataset
-from utils.optim_factory import (LayerDecayValueAssigner, create_optimizer,
+import multimae.utils as utils
+import multimae.utils.data_constants as data_constants
+from multimae.models import multimae
+from multimae.models.input_adapters import PatchedInputAdapter
+from multimae.models.output_adapters import LinearOutputAdapter
+from multimae.utils import LabelSmoothingCrossEntropy, Mixup, ModelEma
+from multimae.utils import NativeScalerWithGradNormCount as NativeScaler
+from multimae.utils import SoftTargetCrossEntropy, accuracy, create_model
+from multimae.utils.datasets import build_dataset
+from multimae.utils.optim_factory import (LayerDecayValueAssigner, create_optimizer,
                                  get_parameter_groups)
 
 

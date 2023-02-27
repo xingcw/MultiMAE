@@ -31,9 +31,9 @@ import torch.distributed as dist
 import torch.nn.functional as F
 import yaml
 
-import utils
-import utils.data_constants as data_constants
-from multimae import multimae
+import multimae.utils as utils
+import multimae.utils.data_constants as data_constants
+from multimae.models import multimae
 from multimae.models.input_adapters import PatchedInputAdapter, SemSegInputAdapter
 from multimae.models.output_adapters import (ConvNeXtAdapter, DPTOutputAdapter,
                                       SegmenterMaskTransformerAdapter)
