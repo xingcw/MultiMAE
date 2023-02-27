@@ -14,12 +14,16 @@
 # https://github.com/facebookresearch/mae
 # https://github.com/open-mmlab/mmsegmentation
 # --------------------------------------------------------
-import argparse
-import datetime
-import json
+
 import os
 import time
+import json
+import random
+import socket
 import warnings
+import argparse
+import datetime
+
 from functools import partial
 from pathlib import Path
 from typing import Dict, Iterable
@@ -46,6 +50,8 @@ from multimae.utils.log_images import log_semseg_wandb
 from multimae.utils.optim_factory import LayerDecayValueAssigner, create_optimizer
 from multimae.utils.pos_embed import interpolate_pos_embed_multimae
 from multimae.utils.semseg_metrics import mean_iou
+from pipelines.utils.train_utils import get_result_dir
+
 
 DOMAIN_CONF = {
     'rgb': {
@@ -78,11 +84,17 @@ DOMAIN_CONF = {
 
 
 def get_args():
-    config_parser = parser = argparse.ArgumentParser(description='Training Config', add_help=False)
-    parser.add_argument('-c', '--config', default='', type=str, metavar='FILE',
-                        help='YAML config file specifying default arguments')
+    config_parser = argparse.ArgumentParser(description='Training Config', add_help=False)
+    config_parser.add_argument('-c', '--config', default='cfgs/finetune/semseg/nyu/ft_nyu_200e_multimae-b_rgb-depth.yaml', 
+                               type=str, metavar='FILE', help='YAML config file specifying default arguments')
 
     parser = argparse.ArgumentParser('MultiMAE semantic segmentation fine-tuning script', add_help=False)
+    
+    # configs from file
+    parser.add_argument('-c', '--config', default='', type=str, metavar='FILE',
+                        help='YAML config file specifying default arguments')
+    
+    # training parameters
     parser.add_argument('--batch_size', default=4, type=int, help='Batch size per GPU')
     parser.add_argument('--epochs', default=64, type=int)
     parser.add_argument('--save_ckpt_freq', default=20, type=int)
@@ -230,6 +242,8 @@ def get_args():
     parser.set_defaults(fp16=True)
 
     # Wandb logging
+    parser.add_argument('--redirect', "-rd", default="", type=str,
+                        help="change the result dir to redirected folder")
     parser.add_argument('--log_wandb', default=False, action='store_true',
                         help='log training and validation metrics to wandb')
     parser.add_argument('--wandb_project', default=None, type=str,
@@ -251,15 +265,26 @@ def get_args():
     parser.add_argument('--dist_url', default='env://', help='url used to set up distributed training')
 
     # Do we have a config file to parse?
+    multimae_path = Path(os.environ["FLIGHTMARE_PATH"]).parent / "vision_backbones/MultiMAE"
     args_config, remaining = config_parser.parse_known_args()
     if args_config.config:
-        with open(args_config.config, 'r') as f:
+        config_path = multimae_path / args_config.config
+        with open(config_path, 'r') as f:
             cfg = yaml.safe_load(f)
             parser.set_defaults(**cfg)
 
     # The main arg parser parses the rest of the args, the usual
     # defaults will have been overridden if config file specified.
     args = parser.parse_args(remaining)
+    
+    # add prefix for all paths
+    args.data_path = str(multimae_path / args.data_path)
+    args.eval_data_path = str(multimae_path / args.eval_data_path)
+    args.finetune = str(multimae_path / args.finetune)
+    
+    server = socket.gethostname()
+    result_dir = get_result_dir(server, redirect=args.redirect)
+    args.output_dir = str(result_dir / args.output_dir)
 
     return args
 
@@ -272,8 +297,7 @@ def main(args):
     seed = args.seed + utils.get_rank()
     torch.manual_seed(seed)
     np.random.seed(seed)
-    # random.seed(seed)
-
+    random.seed(seed)
     cudnn.benchmark = True
 
     if not args.show_user_warnings:
@@ -304,9 +328,10 @@ def main(args):
     else:
         dataset_test = None
 
-    if True:  # args.distributed:
-        num_tasks = utils.get_world_size()
-        global_rank = utils.get_rank()
+    num_tasks = utils.get_world_size()
+    global_rank = utils.get_rank()
+        
+    if args.distributed:
         sampler_train = torch.utils.data.DistributedSampler(
             dataset_train, num_replicas=num_tasks, rank=global_rank, shuffle=True, drop_last=True,
         )

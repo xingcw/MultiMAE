@@ -40,7 +40,7 @@ HYPERSIM_TRAIN_PATH = 'ADD_DATA_PATH_HERE'
 HPYERSIM_VAL_PATH = 'ADD_DATA_PATH_HERE'
 HYPERSIM_TEST_PATH = 'ADD_DATA_PATH_HERE'
 
-NYU_TRAIN_PATH = 'ADD_DATA_PATH_HERE'
-NYU_TEST_PATH = 'ADD_DATA_PATH_HERE'
+NYU_TRAIN_PATH = '/home/chunwei/Documents/drone_offboard/vision_backbones/MultiMAE/datasets/nyu/train'
+NYU_TEST_PATH = '/home/chunwei/Documents/drone_offboard/vision_backbones/MultiMAE/datasets/nyu/test'
 
 TASKONOMY_PATH = 'ADD_DATA_PATH_HERE'

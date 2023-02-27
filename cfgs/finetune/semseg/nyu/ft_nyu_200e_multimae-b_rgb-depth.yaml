@@ -1,12 +1,12 @@
 # NYU semseg config
 
 # Finetune from:
-finetune: '/path/to/pretrained_weights' # Change me
+finetune: 'pretrained_models/multimae-b_98_rgb+-depth-semseg_1600e_multivit-afff3f8c.pth' # Change me
 
 # Input tasks
 in_domains: rgb-depth
-decoder_main_tasks: rgb # Can also be changed to rgb-depth
-use_mask_valid: True # Requires "task" mask_valid to be saved to disk
+decoder_main_tasks: rgb     # Can also be changed to rgb-depth
+use_mask_valid: False        # Requires "task" mask_valid to be saved to disk
 
 # Architecture
 model: multivit_base
@@ -25,7 +25,7 @@ lr: 0.0001 # = 1e-4
 warmup_lr: 0.000001 # = 1e-6
 min_lr: 0.
 warmup_epochs: 1
-batch_size: 2
+batch_size: 1
 input_size: 640
 layer_decay: 0.75
 
@@ -33,11 +33,11 @@ layer_decay: 0.75
 aug_name: simple
 
 # Data info
-data_path: '/path/to/dataset' # Change me
-eval_data_path: '/path/to/eval_dataset' # Change me
+data_path: 'datasets/nyu/train' # Change me
+eval_data_path: 'datasets/nyu/test' # Change me
 num_classes: 40
 dataset_name: nyu
-dist_eval: True
+dist_eval: False
 seg_reduce_zero_label: True
 eval_freq: 20
 
@@ -47,8 +47,8 @@ find_unused_params: False
 # Wandb and logging
 log_wandb: False # Set to True to log to Weights & Biases
 wandb_project: 'multimae-finetune-semseg'
-wandb_entity: null # Change if needed
+wandb_entity: 'xingcw' # Change if needed
 wandb_run_name: 'ft_nyu_200e_multimae-b_rgb-depth'
 log_images_wandb: True
 log_images_freq: 20
-output_dir: 'output/finetune/semseg/nyu/ft_nyu_200e_multimae-b_rgb-depth'
+output_dir: 'multimae/finetune/semseg/nyu/ft_nyu_200e_multimae-b_rgb-depth'

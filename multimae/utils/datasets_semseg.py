@@ -24,7 +24,7 @@ except:
 import cv2
 import torch.nn.functional as F
 
-from utils import (IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD, PAD_MASK_VALUE,
+from multimae.utils import (IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD, PAD_MASK_VALUE,
                    SEG_IGNORE_INDEX)
 
 from .dataset_folder import ImageFolder, MultiTaskImageFolder
