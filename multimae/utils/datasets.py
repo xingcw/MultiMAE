@@ -20,7 +20,7 @@ import torch
 import torchvision.transforms.functional as TF
 from torchvision import datasets, transforms
 
-from utils import create_transform
+from multimae.utils import create_transform
 
 from .data_constants import (IMAGE_TASKS, IMAGENET_DEFAULT_MEAN,
                              IMAGENET_DEFAULT_STD, IMAGENET_INCEPTION_MEAN,

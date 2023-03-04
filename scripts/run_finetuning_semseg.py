@@ -50,7 +50,7 @@ from multimae.utils.log_images import log_semseg_wandb
 from multimae.utils.optim_factory import LayerDecayValueAssigner, create_optimizer
 from multimae.utils.pos_embed import interpolate_pos_embed_multimae
 from multimae.utils.semseg_metrics import mean_iou
-from pipelines.utils.train_utils import get_result_dir
+from pipelines.utils.log_utils import get_logger
 
 
 DOMAIN_CONF = {
@@ -282,9 +282,9 @@ def get_args():
     args.eval_data_path = str(multimae_path / args.eval_data_path)
     args.finetune = str(multimae_path / args.finetune)
     
-    server = socket.gethostname()
-    result_dir = get_result_dir(server, redirect=args.redirect)
-    args.output_dir = str(result_dir / args.output_dir)
+    # configure save dir
+    timestamp = datetime.datetime.now().strftime("%m-%d-%H-%M-%S")
+    args.output_dir = str(multimae_path / args.output_dir / timestamp)
 
     return args
 
@@ -299,6 +299,9 @@ def main(args):
     np.random.seed(seed)
     random.seed(seed)
     cudnn.benchmark = True
+    
+    # configure new logger
+    dp_logger = get_logger("[MultiMAE]", double_print=True, res_dir=args.output_dir, exp_name=args.wandb_run_name)
 
     if not args.show_user_warnings:
         warnings.filterwarnings("ignore", category=UserWarning)
@@ -335,10 +338,10 @@ def main(args):
         sampler_train = torch.utils.data.DistributedSampler(
             dataset_train, num_replicas=num_tasks, rank=global_rank, shuffle=True, drop_last=True,
         )
-        print("Sampler_train = %s" % str(sampler_train))
+        dp_logger.info("Sampler_train = %s" % str(sampler_train))
         if args.dist_eval:
             if len(dataset_val) % num_tasks != 0:
-                print('Warning: Enabling distributed evaluation with an eval dataset not divisible by process number. '
+                dp_logger.info('Warning: Enabling distributed evaluation with an eval dataset not divisible by process number. '
                       'This will slightly alter validation results as extra duplicate entries are added to achieve '
                       'equal num of samples per-process.')
             sampler_val = torch.utils.data.DistributedSampler(
@@ -461,16 +464,16 @@ def main(args):
     model_without_ddp = model
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
 
-    print("Model = %s" % str(model_without_ddp))
-    print('number of params: {} M'.format(n_parameters / 1e6))
+    dp_logger.info("Model = %s" % str(model_without_ddp))
+    dp_logger.info('number of params: {} M'.format(n_parameters / 1e6))
 
     total_batch_size = args.batch_size * utils.get_world_size()
     num_training_steps_per_epoch = len(dataset_train) // total_batch_size
 
-    print("LR = %.8f" % args.lr)
-    print("Batch size = %d" % total_batch_size)
-    print("Number of training steps = %d" % num_training_steps_per_epoch)
-    print("Number of training examples per epoch = %d" % (total_batch_size * num_training_steps_per_epoch))
+    dp_logger.info("LR = %.8f" % args.lr)
+    dp_logger.info("Batch size = %d" % total_batch_size)
+    dp_logger.info("Number of training steps = %d" % num_training_steps_per_epoch)
+    dp_logger.info("Number of training examples per epoch = %d" % (total_batch_size * num_training_steps_per_epoch))
 
     num_layers = model_without_ddp.get_num_layers()
     if args.layer_decay < 1.0:
@@ -480,21 +483,21 @@ def main(args):
         assigner = None
 
     if assigner is not None:
-        print("Assigned values = %s" % str(assigner.values))
+        dp_logger.info("Assigned values = %s" % str(assigner.values))
 
     skip_weight_decay_list = model.no_weight_decay()
-    print("Skip weight decay list: ", skip_weight_decay_list)
+    dp_logger.info("Skip weight decay list: ", skip_weight_decay_list)
 
     if args.distributed:
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=args.find_unused_params)
         model_without_ddp = model.module
 
     optimizer = create_optimizer(args, model_without_ddp, skip_list=skip_weight_decay_list,
-            get_num_layer=assigner.get_layer_id if assigner is not None else None,
-            get_layer_scale=assigner.get_scale if assigner is not None else None)
+                                 get_num_layer=assigner.get_layer_id if assigner is not None else None,
+                                 get_layer_scale=assigner.get_scale if assigner is not None else None)
     loss_scaler = NativeScaler(enabled=args.fp16)
 
-    print("Use step level LR & WD scheduler!")
+    dp_logger.info("Use step level LR & WD scheduler!")
     lr_schedule_values = utils.cosine_scheduler(
         args.lr, args.min_lr, args.epochs, num_training_steps_per_epoch,
         warmup_epochs=args.warmup_epochs, warmup_steps=args.warmup_steps,
@@ -503,11 +506,11 @@ def main(args):
         args.weight_decay_end = args.weight_decay
     wd_schedule_values = utils.cosine_scheduler(
         args.weight_decay, args.weight_decay_end, args.epochs, num_training_steps_per_epoch)
-    print("Max WD = %.7f, Min WD = %.7f" % (max(wd_schedule_values), min(wd_schedule_values)))
+    dp_logger.info("Max WD = %.7f, Min WD = %.7f" % (max(wd_schedule_values), min(wd_schedule_values)))
 
     criterion = torch.nn.CrossEntropyLoss(ignore_index=utils.SEG_IGNORE_INDEX)
 
-    print("criterion = %s" % str(criterion))
+    dp_logger.info("criterion = %s" % str(criterion))
 
     # Specifies if transformer encoder should only return last layer or all layers for DPT
     return_all_layers = args.output_adapter in ['dpt']
@@ -519,23 +522,23 @@ def main(args):
         val_stats = evaluate(model=model, criterion=criterion, data_loader=data_loader_val,
                              device=device, epoch=-1, in_domains=args.in_domains,
                              num_classes=args.num_classes, dataset_name=args.dataset_name, mode='val',
-                             fp16=args.fp16, return_all_layers=return_all_layers)
-        print(f"Performance of the network on the {len(dataset_val)} validation images")
+                             fp16=args.fp16, return_all_layers=return_all_layers, dp_logger=dp_logger)
+        dp_logger.info(f"Performance of the network on the {len(dataset_val)} validation images")
         miou, a_acc, acc, loss = val_stats['mean_iou'], val_stats['pixel_accuracy'], val_stats['mean_accuracy'], val_stats['loss']
-        print(f'* mIoU {miou:.3f} aAcc {a_acc:.3f} Acc {acc:.3f} Loss {loss:.3f}')
+        dp_logger.info(f'* mIoU {miou:.3f} aAcc {a_acc:.3f} Acc {acc:.3f} Loss {loss:.3f}')
         exit(0)
 
     if args.test:
         test_stats = evaluate(model=model, criterion=criterion, data_loader=data_loader_test,
                               device=device, epoch=-1, in_domains=args.in_domains,
                               num_classes=args.num_classes, dataset_name=args.dataset_name, mode='test',
-                              fp16=args.fp16, return_all_layers=return_all_layers)
-        print(f"Performance of the network on the {len(dataset_test)} test images")
+                              fp16=args.fp16, return_all_layers=return_all_layers, dp_logger=dp_logger)
+        dp_logger.info(f"Performance of the network on the {len(dataset_test)} test images")
         miou, a_acc, acc, loss = test_stats['mean_iou'], test_stats['pixel_accuracy'], test_stats['mean_accuracy'], test_stats['loss']
-        print(f'* mIoU {miou:.3f} aAcc {a_acc:.3f} Acc {acc:.3f} Loss {loss:.3f}')
+        dp_logger.info(f'* mIoU {miou:.3f} aAcc {a_acc:.3f} Acc {acc:.3f} Loss {loss:.3f}')
         exit(0)
 
-    print(f"Start training for {args.epochs} epochs")
+    dp_logger.info(f"Start training for {args.epochs} epochs")
     start_time = time.time()
     max_miou = 0.0
     for epoch in range(args.start_epoch, args.epochs):
@@ -548,13 +551,14 @@ def main(args):
             optimizer=optimizer, device=device, epoch=epoch, loss_scaler=loss_scaler,
             max_norm=args.clip_grad, log_writer=log_writer, start_steps=epoch * num_training_steps_per_epoch,
             lr_schedule_values=lr_schedule_values, wd_schedule_values=wd_schedule_values, in_domains=args.in_domains,
-            fp16=args.fp16, return_all_layers=return_all_layers
+            fp16=args.fp16, return_all_layers=return_all_layers, dp_logger=dp_logger
         )
         if args.output_dir and args.save_ckpt:
             if (epoch + 1) % args.save_ckpt_freq == 0 or epoch + 1 == args.epochs:
                 utils.save_model(
                     args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
                     loss_scaler=loss_scaler, epoch=epoch)
+                dp_logger.info("save model at epoch %d" % epoch)
 
         if data_loader_val is not None and (epoch % args.eval_freq == 0 or epoch == args.epochs - 1):
             log_images = args.log_wandb and args.log_images_wandb and (epoch % args.log_images_freq == 0)
@@ -562,15 +566,16 @@ def main(args):
                                  device=device, epoch=epoch, in_domains=args.in_domains,
                                  num_classes=args.num_classes, log_images=log_images, 
                                  dataset_name=args.dataset_name, mode='val', fp16=args.fp16,
-                                 return_all_layers=return_all_layers)
+                                 return_all_layers=return_all_layers, dp_logger=dp_logger)
             if max_miou < val_stats["mean_iou"]:
                 max_miou = val_stats["mean_iou"]
                 if args.output_dir and args.save_ckpt:
                     utils.save_model(
                         args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
                         loss_scaler=loss_scaler, epoch="best")
-            print(f'Max mIoU: {max_miou:.3f}')
-
+                    dp_logger.info("save best model at epoch %d" % epoch)
+                    
+            dp_logger.info(f'Max mIoU: {max_miou:.3f}')
             log_stats = {**{f'train/{k}': v for k, v in train_stats.items()},
                          **{f'val/{k}': v for k, v in val_stats.items()},
                          'epoch': epoch,
@@ -589,11 +594,11 @@ def main(args):
 
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
-    print('Training time {}'.format(total_time_str))
+    dp_logger.info('Training time {}'.format(total_time_str))
 
     # Test with best checkpoint
     if data_loader_test is not None:
-        print('Loading model with best validation mIoU')
+        dp_logger.info('Loading model with best validation mIoU')
         checkpoint = torch.load(os.path.join(args.output_dir, 'checkpoint-best.pth'), map_location='cpu')
         state_dict = {}
         for k,v in checkpoint['model'].items():
@@ -601,11 +606,11 @@ def main(args):
         msg = model.load_state_dict(state_dict, strict=False)
         print(msg)
 
-        print('Testing with best checkpoint')
+        dp_logger.info('Testing with best checkpoint')
         test_stats = evaluate(model=model, criterion=criterion, data_loader=data_loader_test,
                               device=device, epoch=checkpoint['epoch'], in_domains=args.in_domains,
                               num_classes=args.num_classes, log_images=True, dataset_name=args.dataset_name,
-                              mode='test', fp16=args.fp16, return_all_layers=return_all_layers)
+                              mode='test', fp16=args.fp16, return_all_layers=return_all_layers, dp_logger=dp_logger)
         log_stats = {f'test/{k}': v for k, v in test_stats.items()}
         if log_writer is not None:
             log_writer.set_step(args.epochs * num_training_steps_per_epoch)
@@ -619,7 +624,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module, data_loa
                     optimizer: torch.optim.Optimizer, device: torch.device, epoch: int,
                     loss_scaler, max_norm: float = 0, log_writer=None, start_steps=None,
                     lr_schedule_values=None, wd_schedule_values=None, in_domains=None, fp16=True,
-                    return_all_layers=False):
+                    return_all_layers=False, dp_logger=None):
     model.train()
     metric_logger = utils.MetricLogger(delimiter="  ")
     metric_logger.add_meter('lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
@@ -627,7 +632,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module, data_loa
     header = 'Epoch: [{}]'.format(epoch)
     print_freq = 20
 
-    for step, (x, _) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
+    for step, (x, _) in enumerate(metric_logger.log_every(data_loader, print_freq, header, dp_logger)):
         # assign learning rate & weight decay for each step
         it = start_steps + step  # global training iteration
         if lr_schedule_values is not None or wd_schedule_values is not None:
@@ -703,13 +708,16 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module, data_loa
 
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
-    print("Averaged stats:", metric_logger)
+    if dp_logger is not None:
+        dp_logger.info("Averaged stats:", metric_logger)
+    else:
+        print("Averaged stats:", metric_logger)
     return {'[Epoch] ' + k: meter.global_avg for k, meter in metric_logger.meters.items()}
 
 
 @torch.no_grad()
 def evaluate(model, criterion, data_loader, device, epoch, in_domains, num_classes, dataset_name,
-             log_images=False, mode='val', fp16=True, return_all_layers=False):
+             log_images=False, mode='val', fp16=True, return_all_layers=False, dp_logger=None):
     # Switch to evaluation mode
     model.eval()
 
@@ -731,8 +739,8 @@ def evaluate(model, criterion, data_loader, device, epoch, in_domains, num_class
         rgb_gts = []
         seg_preds_with_void = []
         depth_gts = []
-
-    for (x, _) in metric_logger.log_every(data_loader, print_freq, header):
+        
+    for (x, _) in metric_logger.log_every(data_loader, print_freq, header, dp_logger):
         tasks_dict = {
             task: tensor.to(device, non_blocking=True)
             for task, tensor in x.items()
@@ -775,7 +783,7 @@ def evaluate(model, criterion, data_loader, device, epoch, in_domains, num_class
         log_semseg_wandb(rgb_gts, seg_preds_with_void, seg_gts, depth_gts=depth_gts, dataset_name=dataset_name, prefix=prefix)
 
     scores = compute_metrics_distributed(seg_preds, seg_gts, size=len(data_loader.dataset), num_classes=num_classes,
-                                         device=device, ignore_index=utils.SEG_IGNORE_INDEX)
+                                         device=device, ignore_index=utils.SEG_IGNORE_INDEX, dist_on=None)
 
     for k, v in scores.items():
         metric_logger.update(**{f"{k}": v})
@@ -783,12 +791,12 @@ def evaluate(model, criterion, data_loader, device, epoch, in_domains, num_class
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
 
-    print(f'* mIoU {metric_logger.mean_iou.global_avg:.3f} aAcc {metric_logger.pixel_accuracy.global_avg:.3f} '
+    dp_logger.info(f'* mIoU {metric_logger.mean_iou.global_avg:.3f} aAcc {metric_logger.pixel_accuracy.global_avg:.3f} '
           f'Acc {metric_logger.mean_accuracy.global_avg:.3f} Loss {metric_logger.loss.global_avg:.3f}')
 
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
 
-
+    
 def compute_metrics_distributed(seg_preds, seg_gts, size, num_classes, device, ignore_index=utils.SEG_IGNORE_INDEX, dist_on='cpu'):
 
     # Replace void by ignore in gt (void is never counted in mIoU)
@@ -807,6 +815,10 @@ def compute_metrics_distributed(seg_preds, seg_gts, size, num_classes, device, i
         # gather all result part
         dist.all_gather_object(all_seg_preds, seg_preds)
         dist.all_gather_object(all_seg_gts, seg_gts)
+    else:
+        # not using distribute mode
+        all_seg_preds = [seg_preds]
+        all_seg_gts = [seg_gts]
 
     ret_metrics_mean = torch.zeros(3, dtype=float, device=device)
 
@@ -829,8 +841,10 @@ def compute_metrics_distributed(seg_preds, seg_gts, size, num_classes, device, i
         )
         # cat_iou = ret_metrics[2]
 
-    # broadcast metrics from 0 to all nodes
-    dist.broadcast(ret_metrics_mean, 0)
+    if dist_on is not None:
+        # broadcast metrics from 0 to all nodes
+        dist.broadcast(ret_metrics_mean, 0)
+        
     pix_acc, mean_acc, miou = ret_metrics_mean
     ret = dict(pixel_accuracy=pix_acc, mean_accuracy=mean_acc, mean_iou=miou)
     return ret

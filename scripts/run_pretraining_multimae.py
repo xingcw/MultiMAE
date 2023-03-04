@@ -20,6 +20,7 @@ import math
 import os
 import sys
 import time
+import random
 import warnings
 from functools import partial
 from pathlib import Path
@@ -45,6 +46,8 @@ from multimae.utils.datasets import build_multimae_pretraining_dataset
 from multimae.utils.optim_factory import create_optimizer
 from multimae.utils.task_balancing import (NoWeightingStrategy,
                                   UncertaintyWeightingStrategy)
+from pipelines.utils.log_utils import get_logger
+
 
 DOMAIN_CONF = {
     'rgb': {
@@ -74,8 +77,8 @@ DOMAIN_CONF = {
 
 def get_args():
     config_parser = parser = argparse.ArgumentParser(description='Training Config', add_help=False)
-    parser.add_argument('-c', '--config', default='', type=str, metavar='FILE',
-                        help='YAML config file specifying default arguments')
+    config_parser.add_argument('-c', '--config', default='cfgs/pretrain/multimae-b_98_rgb+-depth-semseg_400e.yaml', 
+                               type=str, metavar='FILE', help='YAML config file specifying default arguments')
 
     parser = argparse.ArgumentParser('MultiMAE pre-training script', add_help=False)
 
@@ -227,15 +230,24 @@ def get_args():
     parser.add_argument('--dist_url', default='env://', help='url used to set up distributed training')
 
     # Do we have a config file to parse?
+    multimae_path = Path(os.environ["FLIGHTMARE_PATH"]).parent / "vision_backbones/MultiMAE"
     args_config, remaining = config_parser.parse_known_args()
     if args_config.config:
-        with open(args_config.config, 'r') as f:
+        config_path = multimae_path / args_config.config
+        with open(config_path, 'r') as f:
             cfg = yaml.safe_load(f)
             parser.set_defaults(**cfg)
 
     # The main arg parser parses the rest of the args, the usual
     # defaults will have been overridden if config file specified.
     args = parser.parse_args(remaining)
+    
+    # add prefix for all paths
+    args.data_path = str(multimae_path / args.data_path)
+    
+    # configure save dir
+    timestamp = datetime.datetime.now().strftime("%m-%d-%H-%M-%S")
+    args.output_dir = str(multimae_path / args.output_dir / timestamp)
 
     return args
 
@@ -300,9 +312,11 @@ def main(args):
     seed = args.seed + utils.get_rank()
     torch.manual_seed(seed)
     np.random.seed(seed)
-    # random.seed(seed)
-
+    random.seed(seed)
     cudnn.benchmark = True
+    
+    # configure new logger
+    dp_logger = get_logger("[MultiMAE]", double_print=True, res_dir=args.output_dir, exp_name=args.wandb_run_name)
 
     if not args.show_user_warnings:
         warnings.filterwarnings("ignore", category=UserWarning)
@@ -334,15 +348,14 @@ def main(args):
     
     num_tasks = utils.get_world_size()  # return 1 for non-distributed device
     global_rank = utils.get_rank()      # return 0 for non-distributed device
+    num_training_steps_per_epoch = len(dataset_train) // args.batch_size // num_tasks
         
     if args.distributed:
         sampler_rank = global_rank
-        num_training_steps_per_epoch = len(dataset_train) // args.batch_size // num_tasks
-
         sampler_train = torch.utils.data.DistributedSampler(
             dataset_train, num_replicas=num_tasks, rank=sampler_rank, shuffle=True, drop_last=True,
         )
-        print("Sampler_train = %s" % str(sampler_train))
+        dp_logger.info("Sampler_train = %s" % str(sampler_train))
     else:
         sampler_train = torch.utils.data.RandomSampler(dataset_train)
 
@@ -367,16 +380,16 @@ def main(args):
     loss_balancer_without_ddp = loss_balancer
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
 
-    print(f"Model = %s" % str(model_without_ddp))
-    print(f"Number of params: {n_parameters / 1e6} M")
+    dp_logger.info(f"Model = %s" % str(model_without_ddp))
+    dp_logger.info(f"Number of params: {n_parameters / 1e6} M")
 
     total_batch_size = args.batch_size * utils.get_world_size()
     args.lr = args.blr * total_batch_size / 256
 
-    print("LR = %.8f" % args.lr)
-    print("Batch size = %d" % total_batch_size)
-    print("Number of training steps = %d" % num_training_steps_per_epoch)
-    print("Number of training examples per epoch = %d" % (total_batch_size * num_training_steps_per_epoch))
+    dp_logger.info("LR = %.8f" % args.lr)
+    dp_logger.info("Batch size = %d" % total_batch_size)
+    dp_logger.info("Number of training steps = %d" % num_training_steps_per_epoch)
+    dp_logger.info("Number of training examples per epoch = %d" % (total_batch_size * num_training_steps_per_epoch))
 
     if args.distributed:
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=args.find_unused_params)
@@ -391,7 +404,7 @@ def main(args):
         args, {'model': model_without_ddp, 'balancer': loss_balancer_without_ddp})
     loss_scaler = NativeScaler()
 
-    print("Use step level LR & WD scheduler!")
+    dp_logger.info("Use step level LR & WD scheduler!")
     lr_schedule_values = utils.cosine_scheduler(
         args.lr, args.min_lr, args.epochs, num_training_steps_per_epoch,
         warmup_epochs=args.warmup_epochs, warmup_steps=args.warmup_steps,
@@ -400,12 +413,12 @@ def main(args):
         args.weight_decay_end = args.weight_decay
     wd_schedule_values = utils.cosine_scheduler(
         args.weight_decay, args.weight_decay_end, args.epochs, num_training_steps_per_epoch)
-    print("Max WD = %.7f, Min WD = %.7f" % (max(wd_schedule_values), min(wd_schedule_values)))
+    dp_logger.info("Max WD = %.7f, Min WD = %.7f" % (max(wd_schedule_values), min(wd_schedule_values)))
 
     utils.auto_load_model(
         args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer, loss_scaler=loss_scaler)
 
-    print(f"Start training for {args.epochs} epochs")
+    dp_logger.info(f"Start training for {args.epochs} epochs")
     start_time = time.time()
     for epoch in range(args.start_epoch, args.epochs):
         if args.distributed:
@@ -453,7 +466,7 @@ def main(args):
 
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
-    print('Training time {}'.format(total_time_str))
+    dp_logger.info('Training time {}'.format(total_time_str))
 
 
 def train_one_epoch(model: torch.nn.Module, data_loader: Iterable, tasks_loss_fn: Dict[str, torch.nn.Module],
@@ -462,7 +475,7 @@ def train_one_epoch(model: torch.nn.Module, data_loader: Iterable, tasks_loss_fn
                     log_writer=None, lr_scheduler=None, start_steps=None, lr_schedule_values=None, wd_schedule_values=None,
                     num_encoded_tokens: int = 196, in_domains: List[str] = [] , loss_on_unmasked: bool = True,
                     alphas: float = 1.0, sample_tasks_uniformly: bool = False, standardize_depth: bool = True,
-                    extra_norm_pix_loss: bool = False, fp32_output_adapters: List[str] = []):
+                    extra_norm_pix_loss: bool = False, fp32_output_adapters: List[str] = [], dp_logger=None):
     model.train()
     metric_logger = utils.MetricLogger(delimiter="  ")
     metric_logger.add_meter('lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
@@ -528,7 +541,7 @@ def train_one_epoch(model: torch.nn.Module, data_loader: Iterable, tasks_loss_fn
         weighted_task_loss_values = {f'{task}_loss_weighted': l.item() for task, l in weighted_task_losses.items()}
 
         if not math.isfinite(loss_value):
-            print("Loss is {}, stopping training".format(loss_value))
+            dp_logger.info("Loss is {}, stopping training".format(loss_value))
             sys.exit(1)
 
         optimizer.zero_grad()
@@ -575,7 +588,10 @@ def train_one_epoch(model: torch.nn.Module, data_loader: Iterable, tasks_loss_fn
             lr_scheduler.step_update(start_steps + step)
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
-    print("Averaged stats:", metric_logger)
+    if dp_logger is not None:
+        dp_logger.info("Averaged stats:", metric_logger)
+    else:
+        print("Averaged stats:", metric_logger)
     return {'[Epoch] ' + k: meter.global_avg for k, meter in metric_logger.meters.items()}
 
 
