@@ -28,7 +28,7 @@ loss_on_unmasked: False
 fp32_output_adapters: semseg
 
 # Data
-data_path: datasets/nyu/train # Change me
+data_path: datasets/test # Change me
 
 # Wandb logging
 log_wandb: True # Set to True to log to Weights & Biases
