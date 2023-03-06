@@ -13,8 +13,7 @@
 # https://github.com/BUPT-PRIV/MAE-priv
 # https://github.com/facebookresearch/mae
 # --------------------------------------------------------
-import argparse
-import datetime
+
 import json
 import math
 import os
@@ -22,6 +21,9 @@ import sys
 import time
 import random
 import warnings
+import argparse
+import datetime
+from copy import deepcopy
 from functools import partial
 from pathlib import Path
 from typing import Dict, Iterable, List
@@ -34,7 +36,7 @@ from einops import rearrange
 
 import multimae.utils as utils
 import multimae.utils.data_constants as data_constants
-from multimae.models import multimae
+from multimae.utils.train_utils import normalize_depth
 from multimae.models.criterion import (MaskedCrossEntropyLoss, MaskedL1Loss,
                                 MaskedMSELoss)
 from multimae.models.input_adapters import PatchedInputAdapter, SemSegInputAdapter
@@ -344,7 +346,10 @@ def main(args):
                                                                norm_pix=True)
 
     # Get dataset
-    dataset_train = build_multimae_pretraining_dataset(args)
+    dataset_train = build_multimae_pretraining_dataset(args, args.data_path)
+    use_validation = True if args.eval_data_path else False
+    dataset_val = build_multimae_pretraining_dataset(args, args.eval_data_path) if use_validation else None
+    
     
     num_tasks = utils.get_world_size()  # return 1 for non-distributed device
     global_rank = utils.get_rank()      # return 0 for non-distributed device
@@ -358,6 +363,7 @@ def main(args):
         dp_logger.info("Sampler_train = %s" % str(sampler_train))
     else:
         sampler_train = torch.utils.data.RandomSampler(dataset_train)
+        sampler_val = torch.utils.data.RandomSampler(dataset_val) if use_validation else None
 
     if global_rank == 0 and args.log_wandb:
         log_writer = utils.WandbLogger(args)
@@ -373,6 +379,14 @@ def main(args):
         pin_memory=args.pin_mem,
         drop_last=True,
     )
+    
+    data_loader_val = torch.utils.data.DataLoader(
+        dataset_val, sampler=sampler_val,
+        batch_size=args.batch_size,
+        num_workers=args.num_workers,
+        pin_memory=args.pin_mem,
+        drop_last=True,
+    ) if use_validation else None
 
     model.to(device)
     loss_balancer.to(device)
@@ -447,18 +461,42 @@ def main(args):
             sample_tasks_uniformly=args.sample_tasks_uniformly,
             standardize_depth=args.standardize_depth,
             extra_norm_pix_loss=args.extra_norm_pix_loss,
-            fp32_output_adapters=args.fp32_output_adapters.split('-')
+            fp32_output_adapters=args.fp32_output_adapters.split('-'),
+            dp_logger=dp_logger
         )
+        
+        log_stats = deepcopy(train_stats)
+        
+        if use_validation and (epoch % args.eval_freq == 0 or epoch == args.epochs - 1):
+            val_stats = validate(
+                model=model,
+                data_loader=data_loader_val,
+                tasks_loss_fn=tasks_loss_fn,
+                loss_balancer=loss_balancer,
+                device=device,
+                epoch=epoch,
+                num_encoded_tokens=args.num_encoded_tokens,
+                in_domains=args.in_domains,
+                loss_on_unmasked=args.loss_on_unmasked,
+                alphas=args.alphas,
+                sample_tasks_uniformly=args.sample_tasks_uniformly,
+                standardize_depth=args.standardize_depth,
+                extra_norm_pix_loss=args.extra_norm_pix_loss,
+                fp32_output_adapters=args.fp32_output_adapters.split('-'),
+                dp_logger=dp_logger
+            )
+            log_stats.update(val_stats)
+        
         if log_writer is not None:
-            log_writer.update({**{k: v for k, v in train_stats.items()}, 'epoch': epoch})
+            log_writer.update({**{k: v for k, v in log_stats.items()}, 'epoch': epoch})
+            
         if args.output_dir:
             if (epoch + 1) % args.save_ckpt_freq == 0 or epoch + 1 == args.epochs:
                 utils.save_model(
                     args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
                     loss_scaler=loss_scaler, loss_balancer=loss_balancer_without_ddp, epoch=epoch)
 
-        log_stats = {**{k: v for k, v in train_stats.items()},
-                     'epoch': epoch, 'n_parameters': n_parameters}
+        log_stats.update({'epoch': epoch, 'n_parameters': n_parameters})
 
         if args.output_dir and utils.is_main_process():
             with open(os.path.join(args.output_dir, "log.txt"), mode="a", encoding="utf-8") as f:
@@ -483,7 +521,7 @@ def train_one_epoch(model: torch.nn.Module, data_loader: Iterable, tasks_loss_fn
     header = 'Epoch: [{}]'.format(epoch)
     print_freq = 10
 
-    for step, (x, _) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
+    for step, (x, _) in enumerate(metric_logger.log_every(data_loader, print_freq, header, dp_logger)):
         # assign learning rate & weight decay for each step
         it = start_steps + step  # global training iteration
         if lr_schedule_values is not None or wd_schedule_values is not None:
@@ -500,10 +538,7 @@ def train_one_epoch(model: torch.nn.Module, data_loader: Iterable, tasks_loss_fn
 
         # Truncated depth standardization
         if standardize_depth and 'depth' in tasks_dict:
-            # Flatten depth and remove bottom and top 10% of values
-            trunc_depth = torch.sort(rearrange(tasks_dict['depth'], 'b c h w -> b (c h w)'), dim=1)[0]
-            trunc_depth = trunc_depth[:,int(0.1 * trunc_depth.shape[1]): int(0.9 * trunc_depth.shape[1])]
-            tasks_dict['depth'] = (tasks_dict['depth'] - trunc_depth.mean(dim=1)[:,None,None,None]) / torch.sqrt(trunc_depth.var(dim=1)[:,None,None,None] + 1e-6)
+            tasks_dict["depth"] = normalize_depth(tasks_dict["depth"])
 
         input_dict = {
             task: tensor
@@ -574,14 +609,16 @@ def train_one_epoch(model: torch.nn.Module, data_loader: Iterable, tasks_loss_fn
         if log_writer is not None:
             log_writer.update(
                 {
-                    'loss': loss_value,
-                    'lr': max_lr,
-                    'weight_decay': weight_decay_value,
-                    'grad_norm': grad_norm,
+                    'train/loss': loss_value,
+                    'train/lr': max_lr,
+                    'train/weight_decay': weight_decay_value,
+                    'train/grad_norm': grad_norm,
                 }
             )
-            log_writer.update(task_loss_values)
-            log_writer.update(weighted_task_loss_values)
+            log_task_loss_values = {"train/"+k: v for k, v in task_loss_values.items()}
+            log_weighted_task_loss_values = {"train/"+k: v for k, v in weighted_task_loss_values.items()}
+            log_writer.update(log_task_loss_values)
+            log_writer.update(log_weighted_task_loss_values)
             log_writer.set_step()
 
         if lr_scheduler is not None:
@@ -592,7 +629,79 @@ def train_one_epoch(model: torch.nn.Module, data_loader: Iterable, tasks_loss_fn
         dp_logger.info("Averaged stats:", metric_logger)
     else:
         print("Averaged stats:", metric_logger)
-    return {'[Epoch] ' + k: meter.global_avg for k, meter in metric_logger.meters.items()}
+    return {'train/avg_' + k: meter.global_avg for k, meter in metric_logger.meters.items()}
+
+
+def validate(model: torch.nn.Module, data_loader: Iterable, tasks_loss_fn: Dict[str, torch.nn.Module],
+            loss_balancer: torch.nn.Module, device: torch.device, epoch: int, 
+            num_encoded_tokens: int = 196, in_domains: List[str] = [] , loss_on_unmasked: bool = True,
+            alphas: float = 1.0, sample_tasks_uniformly: bool = False, standardize_depth: bool = True,
+            extra_norm_pix_loss: bool = False, fp32_output_adapters: List[str] = [], dp_logger=None):
+    model.eval()
+    metric_logger = utils.MetricLogger(delimiter="  ")
+    header = '(Val) Epoch: [{}]'.format(epoch)
+    print_freq = 10
+
+    for step, (x, _) in enumerate(metric_logger.log_every(data_loader, print_freq, header, dp_logger)):
+        tasks_dict = {
+            task: tensor.to(device, non_blocking=True)
+            for task, tensor in x.items()
+        }
+
+        # Truncated depth standardization
+        if standardize_depth and 'depth' in tasks_dict:
+            tasks_dict["depth"] = normalize_depth(tasks_dict["depth"])
+
+        input_dict = {
+            task: tensor
+            for task, tensor in tasks_dict.items()
+            if task in in_domains
+        }
+
+        with torch.cuda.amp.autocast():
+            preds, masks = model(
+                input_dict, 
+                num_encoded_tokens=num_encoded_tokens, 
+                alphas=alphas, 
+                sample_tasks_uniformly=sample_tasks_uniformly,
+                fp32_output_adapters=fp32_output_adapters
+            )
+
+            if extra_norm_pix_loss:
+                tasks_dict['norm_rgb'] = tasks_dict['rgb']
+                masks['norm_rgb'] = masks.get('rgb', None)
+
+            task_losses = {}
+            for task in preds:
+                target = tasks_dict[task]
+                    
+                if loss_on_unmasked:
+                    task_losses[task] = tasks_loss_fn[task](preds[task].float(), target)
+                else:
+                    task_losses[task] = tasks_loss_fn[task](preds[task].float(), target, mask=masks.get(task, None))
+
+            weighted_task_losses = loss_balancer(task_losses)
+            loss = sum(weighted_task_losses.values())
+
+        loss_value = sum(task_losses.values()).item()
+        task_loss_values = {f'{task}_loss': l.item() for task, l in task_losses.items()}
+        weighted_task_loss_values = {f'{task}_loss_weighted': l.item() for task, l in weighted_task_losses.items()}
+
+        torch.cuda.synchronize()
+
+        metric_logger.update(loss=loss_value)
+        metric_logger.update(**task_loss_values)
+        metric_logger.update(**weighted_task_loss_values)
+        
+    eval_metrics = {"val/" + k: meter.global_avg for k, meter in metric_logger.meters.items()}
+
+    # gather the stats from all processes
+    metric_logger.synchronize_between_processes()
+    if dp_logger is not None:
+        dp_logger.info("Averaged stats:", metric_logger)
+    else:
+        print("Averaged stats:", metric_logger)
+    return eval_metrics
 
 
 if __name__ == '__main__':
