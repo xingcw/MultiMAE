@@ -26,7 +26,7 @@ from torch import nn
 from torch.distributions.dirichlet import Dirichlet
 
 from multimae.utils.registry import register_model
-
+from multimae.utils.mask_gen import MaskGenerator
 from multimae.models.multimae_utils import Block, trunc_normal_
 
 __all__ = [
@@ -325,12 +325,13 @@ class MultiMAE(nn.Module):
 
         ## Generating masks
         if task_masks is None:
-            task_masks, ids_keep, ids_restore = self.generate_random_masks(
-                input_task_tokens,
-                num_encoded_tokens,
-                alphas=alphas,
-                sample_tasks_uniformly=sample_tasks_uniformly
-            )
+            mask_gen = MaskGenerator(input_task_tokens, num_encoded_tokens, "gate-oriented")
+            if mask_gen.mask_type == "dirichlet":
+                task_masks, ids_keep, ids_restore = mask_gen(alphas=alphas, sample_tasks_uniformly=sample_tasks_uniformly)
+            elif mask_gen.mask_type == "gate-oriented":
+                task_masks, ids_keep, ids_restore = mask_gen(inputs=x)
+            else:
+                task_masks = mask_gen()
         else:
             mask_all = torch.cat([task_masks[task] for task in input_task_tokens.keys()], dim=1)
             ids_shuffle = torch.argsort(mask_all, dim=1)

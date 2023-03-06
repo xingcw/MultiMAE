@@ -1,0 +1,2 @@
+this sample is taken from "/home/chunwei/Documents/drone_offboard/flightmare_internal/flightpy/datasets/SplitS_demo/02-26-21-12-11/data/data/epoch_0000/env_0000/trial_0001"
+and it refers "to step_000010".
