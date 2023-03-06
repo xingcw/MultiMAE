@@ -34,6 +34,8 @@ import torch.backends.cudnn as cudnn
 import yaml
 from einops import rearrange
 
+# do not forget to import `multimae` here
+from multimae.models import multimae
 import multimae.utils as utils
 import multimae.utils.data_constants as data_constants
 from multimae.utils.train_utils import normalize_depth
@@ -42,8 +44,8 @@ from multimae.models.criterion import (MaskedCrossEntropyLoss, MaskedL1Loss,
 from multimae.models.input_adapters import PatchedInputAdapter, SemSegInputAdapter
 from multimae.models.output_adapters import SpatialOutputAdapter
 from multimae.utils import NativeScalerWithGradNormCount as NativeScaler
-from multimae.utils import create_model
-from multimae.utils.data_constants import COCO_SEMSEG_NUM_CLASSES
+from multimae.utils.model_builder import create_model
+from multimae.utils.data_constants import CUSTOM_SEMSEG_NUM_CLASSES
 from multimae.utils.datasets import build_multimae_pretraining_dataset
 from multimae.utils.optim_factory import create_optimizer
 from multimae.utils.task_balancing import (NoWeightingStrategy,
@@ -67,11 +69,11 @@ DOMAIN_CONF = {
         'loss': MaskedL1Loss,
     },
     'semseg': {
-        'num_classes': 133,
+        'num_classes': CUSTOM_SEMSEG_NUM_CLASSES,
         'stride_level': 4,
-        'input_adapter': partial(SemSegInputAdapter, num_classes=COCO_SEMSEG_NUM_CLASSES,
+        'input_adapter': partial(SemSegInputAdapter, num_classes=CUSTOM_SEMSEG_NUM_CLASSES,
                                  dim_class_emb=64, interpolate_class_emb=False),
-        'output_adapter': partial(SpatialOutputAdapter, num_channels=COCO_SEMSEG_NUM_CLASSES),
+        'output_adapter': partial(SpatialOutputAdapter, num_channels=CUSTOM_SEMSEG_NUM_CLASSES),
         'loss': partial(MaskedCrossEntropyLoss, label_smoothing=0.0),
     },
 }
@@ -115,6 +117,8 @@ def get_args():
                         help='Base patch size for image-like modalities (default: %(default)s)')
     parser.add_argument('--input_size', default=224, type=int,
                         help='Images input size for backbone (default: %(default)s)')
+    parser.add_argument('--mask_type', default="dirichlet", type=str, 
+                        help="method used to generate masks for input tokens.")
     parser.add_argument('--alphas', type=float, default=1.0, 
                         help='Dirichlet alphas concentration parameter (default: %(default)s)')
     parser.add_argument('--sample_tasks_uniformly', default=False, action='store_true',
@@ -186,6 +190,8 @@ def get_args():
 
     # Dataset parameters
     parser.add_argument('--data_path', default=data_constants.IMAGENET_TRAIN_PATH, type=str, help='dataset path')
+    parser.add_argument('--eval_data_path', default=data_constants.IMAGENET_VAL_PATH, type=str, help="validation dataset path")
+    parser.add_argument('--eval_freq', default=1, type=int, help="frequency of evaluation")
     parser.add_argument('--imagenet_default_mean_and_std', default=True, action='store_true')
 
     # Misc.
@@ -246,6 +252,7 @@ def get_args():
     
     # add prefix for all paths
     args.data_path = str(multimae_path / args.data_path)
+    args.eval_data_path = str(multimae_path / args.eval_data_path)
     
     # configure save dir
     timestamp = datetime.datetime.now().strftime("%m-%d-%H-%M-%S")
@@ -295,7 +302,8 @@ def get_model(args):
             context_tasks=list(args.in_domains),
             use_xattn=args.decoder_use_xattn
         )
-
+    print(utils.registry.list_models())
+    
     model = create_model(
         args.model,
         input_adapters=input_adapters,
@@ -462,7 +470,8 @@ def main(args):
             standardize_depth=args.standardize_depth,
             extra_norm_pix_loss=args.extra_norm_pix_loss,
             fp32_output_adapters=args.fp32_output_adapters.split('-'),
-            dp_logger=dp_logger
+            dp_logger=dp_logger,
+            mask_type=args.mask_type
         )
         
         log_stats = deepcopy(train_stats)
@@ -483,7 +492,8 @@ def main(args):
                 standardize_depth=args.standardize_depth,
                 extra_norm_pix_loss=args.extra_norm_pix_loss,
                 fp32_output_adapters=args.fp32_output_adapters.split('-'),
-                dp_logger=dp_logger
+                dp_logger=dp_logger,
+                mask_type=args.mask_type
             )
             log_stats.update(val_stats)
         
@@ -508,12 +518,12 @@ def main(args):
 
 
 def train_one_epoch(model: torch.nn.Module, data_loader: Iterable, tasks_loss_fn: Dict[str, torch.nn.Module],
-                    loss_balancer: torch.nn.Module, optimizer: torch.optim.Optimizer,
+                    loss_balancer: torch.nn.Module, optimizer: torch.optim.Optimizer, 
                     device: torch.device, epoch: int, loss_scaler, max_norm: float = None, max_skip_norm: float = None,
                     log_writer=None, lr_scheduler=None, start_steps=None, lr_schedule_values=None, wd_schedule_values=None,
                     num_encoded_tokens: int = 196, in_domains: List[str] = [] , loss_on_unmasked: bool = True,
                     alphas: float = 1.0, sample_tasks_uniformly: bool = False, standardize_depth: bool = True,
-                    extra_norm_pix_loss: bool = False, fp32_output_adapters: List[str] = [], dp_logger=None):
+                    extra_norm_pix_loss: bool = False, fp32_output_adapters: List[str] = [], dp_logger=None, mask_type: str = "dirichlet"):
     model.train()
     metric_logger = utils.MetricLogger(delimiter="  ")
     metric_logger.add_meter('lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
@@ -552,7 +562,8 @@ def train_one_epoch(model: torch.nn.Module, data_loader: Iterable, tasks_loss_fn
                 num_encoded_tokens=num_encoded_tokens, 
                 alphas=alphas, 
                 sample_tasks_uniformly=sample_tasks_uniformly,
-                fp32_output_adapters=fp32_output_adapters
+                fp32_output_adapters=fp32_output_adapters,
+                mask_type=mask_type
             )
 
             if extra_norm_pix_loss:
@@ -631,12 +642,12 @@ def train_one_epoch(model: torch.nn.Module, data_loader: Iterable, tasks_loss_fn
         print("Averaged stats:", metric_logger)
     return {'train/avg_' + k: meter.global_avg for k, meter in metric_logger.meters.items()}
 
-
+@torch.no_grad()
 def validate(model: torch.nn.Module, data_loader: Iterable, tasks_loss_fn: Dict[str, torch.nn.Module],
             loss_balancer: torch.nn.Module, device: torch.device, epoch: int, 
             num_encoded_tokens: int = 196, in_domains: List[str] = [] , loss_on_unmasked: bool = True,
             alphas: float = 1.0, sample_tasks_uniformly: bool = False, standardize_depth: bool = True,
-            extra_norm_pix_loss: bool = False, fp32_output_adapters: List[str] = [], dp_logger=None):
+            extra_norm_pix_loss: bool = False, fp32_output_adapters: List[str] = [], dp_logger=None, mask_type: str = "dirichlet"):
     model.eval()
     metric_logger = utils.MetricLogger(delimiter="  ")
     header = '(Val) Epoch: [{}]'.format(epoch)
@@ -664,7 +675,8 @@ def validate(model: torch.nn.Module, data_loader: Iterable, tasks_loss_fn: Dict[
                 num_encoded_tokens=num_encoded_tokens, 
                 alphas=alphas, 
                 sample_tasks_uniformly=sample_tasks_uniformly,
-                fp32_output_adapters=fp32_output_adapters
+                fp32_output_adapters=fp32_output_adapters,
+                mask_type=mask_type
             )
 
             if extra_norm_pix_loss:
@@ -681,12 +693,15 @@ def validate(model: torch.nn.Module, data_loader: Iterable, tasks_loss_fn: Dict[
                     task_losses[task] = tasks_loss_fn[task](preds[task].float(), target, mask=masks.get(task, None))
 
             weighted_task_losses = loss_balancer(task_losses)
-            loss = sum(weighted_task_losses.values())
 
         loss_value = sum(task_losses.values()).item()
         task_loss_values = {f'{task}_loss': l.item() for task, l in task_losses.items()}
         weighted_task_loss_values = {f'{task}_loss_weighted': l.item() for task, l in weighted_task_losses.items()}
 
+        if not math.isfinite(loss_value):
+            dp_logger.info("Loss is {}, stopping training".format(loss_value))
+            sys.exit(1)
+            
         torch.cuda.synchronize()
 
         metric_logger.update(loss=loss_value)

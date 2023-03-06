@@ -119,22 +119,36 @@ class MaskGenerator:
         nh, nw = patch_dims
         ph, pw = patch_size[0] // semseg_stride, patch_size[1] // semseg_stride
         num_px_thresh = int(px_thresh * ph * pw)
-        semseg = inputs["semseg"]
-        masks = torch.zeros_like(semseg, device=self.device)
-        masks[semseg == 3] = 1              # 3 -> "gate"
-        masks = rearrange(masks, "B (nh h) (nw w) -> B (nh nw) (h w)", B=self.batch_size, nh=nh, nw=nw)
-        rgb_mask = (torch.sum(masks, dim=2) > num_px_thresh) * 1
+        # mask for gate from semseg
+        semseg = inputs["semseg"].detach().clone()
+        fine_masks = torch.zeros_like(semseg, device=self.device)
+        fine_masks[semseg == 3] = 1              # 3 -> "gate"
+        fine_masks = rearrange(fine_masks, "B (nh h) (nw w) -> B (nh nw) (h w)", B=self.batch_size, nh=nh, nw=nw)
+        rgb_mask = (torch.sum(fine_masks, dim=2) > num_px_thresh) * 1
+        # ensure number of encoded rgb tokens less than num_encoded_tokens
+        num_addition_encoded_tokens = fine_masks.shape[1] - self.num_encoded_tokens
+        addition_masks = self.rand_mask(num_addition_encoded_tokens, fine_masks.shape[1], self.batch_size, self.device)
+        rgb_mask = torch.logical_or(rgb_mask, addition_masks) * 1      
+        
+        # sample masks for other domains        
         num_encoded_tokens = torch.ones(self.batch_size, device=self.device) * self.num_encoded_tokens - (rgb_mask == 0).sum(dim=1)
+        num_encoded_tokens = torch.maximum(num_encoded_tokens, torch.zeros_like(num_encoded_tokens)).unsqueeze(-1)
         num_all_tokens = sum([v.shape[1] for k, v in self.input_tokens.items() if k != "rgb"])
-        rand_masks = self.rand_mask(num_encoded_tokens, num_all_tokens)
+        rand_masks = self.rand_mask(num_encoded_tokens, num_all_tokens, batch_size=self.batch_size, device=self.device)
+        
+        # concatenate masks and indexing
         masks = torch.cat([rgb_mask, rand_masks], dim=1)
+        # print(torch.sum((masks == 0), dim=1))
         ids_shuffle = torch.argsort(masks, dim=1)
         ids_restore = torch.argsort(ids_shuffle, dim=1)
-        ids_keep = ids_shuffle[:, :(masks == 0).sum()]
-        masks = rearrange(masks, "b (nt nx) -> b nx nt", nt=self.num_tasks)
-        tasks_masks = {d: masks[:, :, i] for i, d in enumerate(self.input_domains)}
+        ids_keep = ids_shuffle[:, :self.num_encoded_tokens]
+
+        # split masks to each domain
+        num_tokens_per_task = [task_tokens.shape[1] for task_tokens in self.input_tokens.values()]
+        task_masks = torch.split(masks, num_tokens_per_task, dim=1)
+        task_masks = {domain: mask for domain, mask in zip(self.input_tokens.keys(), task_masks)}
         
-        return tasks_masks, ids_keep, ids_restore
+        return task_masks, ids_keep, ids_restore
     
     def sample_alphas(self, B: int, n_tasks: int, alphas: float = 1.0, eps: float = 1e-5):
         """
@@ -151,6 +165,20 @@ class MaskGenerator:
         alphas_tensor = torch.index_select(valid_task_choices, 0, rand_per_sample_choice)
         alphas_tensor = alphas_tensor * torch.tensor(alphas) + eps
         return alphas_tensor
+    
+    def sample_per_task(self, 
+                        alphas: Union[float, List[float]] = 1.0,
+                        sample_tasks_uniformly: bool = False):
+        
+        alphas = [alphas] * len(self.input_tokens) if isinstance(alphas, float) else alphas
+        if sample_tasks_uniformly:
+            alphas = self.sample_alphas(self.batch_size, len(self.input_tokens), alphas=alphas)
+            task_sampling_dist = Dirichlet(alphas).sample().to(self.device)
+        else:
+            task_sampling_dist = Dirichlet(torch.Tensor(alphas)).sample((self.batch_size,)).to(self.device)
+
+        samples_per_task = (task_sampling_dist * self.num_encoded_tokens).round().long()
+        return samples_per_task
 
     def dirichlet_mask_gen(self,
                             alphas: Union[float, List[float]] = 1.0,
@@ -164,15 +192,7 @@ class MaskGenerator:
             for each sample in the batch. Dirichlet sampling is then done over selected subsets.
         """
         B = self.batch_size
-        
-        alphas = [alphas] * len(self.input_tokens) if isinstance(alphas, float) else alphas
-        if sample_tasks_uniformly:
-            alphas = self.sample_alphas(B, len(self.input_tokens), alphas=alphas)
-            task_sampling_dist = Dirichlet(alphas).sample().to(self.device)
-        else:
-            task_sampling_dist = Dirichlet(torch.Tensor(alphas)).sample((B,)).to(self.device)
-
-        samples_per_task = (task_sampling_dist * self.num_encoded_tokens).round().long()
+        samples_per_task = self.sample_per_task(alphas, sample_tasks_uniformly)
 
         task_masks = []
         num_tokens_per_task = [task_tokens.shape[1] for task_tokens in self.input_tokens.values()]

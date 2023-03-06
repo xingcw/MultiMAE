@@ -275,7 +275,8 @@ class MultiMAE(nn.Module):
                 num_encoded_tokens: int = 128,
                 alphas: Union[float, List[float]] = 1.0,
                 sample_tasks_uniformly: bool = False,
-                fp32_output_adapters: List[str] = []):
+                fp32_output_adapters: List[str] = [], 
+                mask_type: str = "dirichlet"):
         """
         Forward pass through input adapters, transformer encoder and output adapters.
         If specified, will randomly drop input tokens.
@@ -291,6 +292,7 @@ class MultiMAE(nn.Module):
             before Dirichlet sampling decides share of masked tokens between them.
         :param fp32_output_adapters: List of task identifiers to force output adapters to
             run with mixed precision turned off for stability reasons.
+        :param mask_type: the method to generate masks.
         """
 
         ## Processing input modalities
@@ -325,7 +327,7 @@ class MultiMAE(nn.Module):
 
         ## Generating masks
         if task_masks is None:
-            mask_gen = MaskGenerator(input_task_tokens, num_encoded_tokens, "gate-oriented")
+            mask_gen = MaskGenerator(input_task_tokens, num_encoded_tokens, mask_type)
             if mask_gen.mask_type == "dirichlet":
                 task_masks, ids_keep, ids_restore = mask_gen(alphas=alphas, sample_tasks_uniformly=sample_tasks_uniformly)
             elif mask_gen.mask_type == "gate-oriented":

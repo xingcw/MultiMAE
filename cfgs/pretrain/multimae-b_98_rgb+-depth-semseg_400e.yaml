@@ -1,5 +1,5 @@
 # Input and output tasks
-in_domains: rgb-semseg
+in_domains: rgb-depth-semseg
 out_domains: rgb-semseg
 standardize_depth: True
 extra_norm_pix_loss: True
@@ -9,8 +9,9 @@ model: pretrain_multimae_base
 decoder_dim: 256
 input_size: 224
 patch_size: 16
+mask_type: gate-oriented
 alphas: 1.0  # Dirichlet concentration parameter
-num_encoded_tokens: 98 # Total would be 196 * 3 patches. 196 / 2 = 98
+num_encoded_tokens: 128 # Total would be 196 * 3 patches. 196 / 2 = 98
 num_global_tokens: 1
 decoder_use_task_queries: True
 decoder_depth: 2
@@ -26,9 +27,11 @@ batch_size: 128
 hflip: 0.5
 loss_on_unmasked: False
 fp32_output_adapters: semseg
+eval_freq: 10
 
 # Data
-data_path: datasets/test # Change me
+data_path: datasets/test/train # Change me
+eval_data_path: datasets/test/val
 
 # Wandb logging
 log_wandb: True # Set to True to log to Weights & Biases
