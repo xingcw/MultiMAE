@@ -125,12 +125,12 @@ def plot_predictions(input_dict, preds, masks, image_size=224, show_img=True):
     )[0].permute(1,2,0).detach().cpu()
     
     pred_rgb = denormalize(preds['rgb'])[0].permute(1,2,0).clamp(0,1)
-    pred_depth = preds['depth'][0,0].detach().cpu()
-    
     use_depth = "depth" in input_dict
     use_semseg = "semseg" in input_dict
     
     if use_depth:
+        pred_depth = preds['depth'][0,0].detach().cpu()
+        
         masked_depth = get_masked_image(
             input_dict['depth'], 
             masks['depth'],
@@ -147,40 +147,43 @@ def plot_predictions(input_dict, preds, masks, image_size=224, show_img=True):
 
     if show_img:
         fig = plt.figure(figsize=(10, 10))
-        grid = ImageGrid(fig, 111, nrows_ncols=(3, 3), axes_pad=0)
+        nrows = 1 + use_depth + use_semseg
+        grid = ImageGrid(fig, 111, nrows_ncols=(nrows, 3), axes_pad=0)
 
         grid[0].imshow(masked_rgb)
         grid[1].imshow(pred_rgb2)
         grid[2].imshow(denormalize(input_dict['rgb'])[0].permute(1,2,0).detach().cpu())
-
-        grid[3].imshow(masked_depth)
-        grid[4].imshow(pred_depth2)
-        grid[5].imshow(input_dict['depth'][0,0].detach().cpu())
         
-        if use_semseg:
-            plot_semseg_gt_masked(input_dict, masks['semseg'], grid[6], mask_value=1.0, image_size=image_size)
-            plot_semseg_pred_masked(input_dict['rgb'], preds['semseg'], input_dict['semseg'], masks['semseg'], grid[7], image_size=image_size)
-            plot_semseg_gt(input_dict, grid[8], image_size=image_size)
-
-        for ax in grid:
-            ax.set_xticks([])
-            ax.set_yticks([])
-                    
         fontsize = 16
         grid[0].set_title('Masked inputs', fontsize=fontsize)
         grid[1].set_title('MultiMAE predictions', fontsize=fontsize)
         grid[2].set_title('Original Reference', fontsize=fontsize)
         grid[0].set_ylabel('RGB', fontsize=fontsize)
-        grid[3].set_ylabel('Depth', fontsize=fontsize)
-        grid[6].set_ylabel('Semantic', fontsize=fontsize)
 
+        if use_depth:
+            grid[3].imshow(masked_depth)
+            grid[4].imshow(pred_depth2)
+            grid[5].imshow(input_dict['depth'][0,0].detach().cpu())
+            grid[3].set_ylabel('Depth', fontsize=fontsize)
+        
+        if use_semseg:
+            start_idx = 6 if use_depth else 3
+            plot_semseg_gt_masked(input_dict, masks['semseg'], grid[start_idx], mask_value=1.0, image_size=image_size)
+            plot_semseg_pred_masked(input_dict['rgb'], preds['semseg'], input_dict['semseg'], masks['semseg'], grid[start_idx+1], image_size=image_size)
+            plot_semseg_gt(input_dict, grid[start_idx+2], image_size=image_size)
+            grid[start_idx].set_ylabel('Semantic', fontsize=fontsize)
+
+        for ax in grid:
+            ax.set_xticks([])
+            ax.set_yticks([])
+                    
     return {
         'rgb_input': masked_rgb,
         'rgb_pred': pred_rgb2,
         'rgb_gt': denormalize(input_dict['rgb'])[0].permute(1,2,0).detach().cpu(),
         'depth_input': masked_depth if use_depth else None,
-        'depth_pred': pred_depth2,
-        'depth_gt': input_dict['depth'][0,0].detach().cpu(),
+        'depth_pred': pred_depth2 if use_depth else None,
+        'depth_gt': input_dict['depth'][0,0].detach().cpu() if use_depth else None,
         'semseg_input': plot_semseg_gt_masked(input_dict, masks['semseg'], mask_value=1.0) if use_semseg else None,
         'semseg_pred': plot_semseg_pred_masked(input_dict['rgb'], preds['semseg'], input_dict['semseg'], masks['semseg']) if use_semseg else None,
         'semseg_gt': plot_semseg_gt(input_dict) if use_semseg else None

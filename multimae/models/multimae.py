@@ -333,7 +333,7 @@ class MultiMAE(nn.Module):
             elif mask_gen.mask_type == "gate-oriented":
                 task_masks, ids_keep, ids_restore = mask_gen(inputs=x)
             else:
-                task_masks = mask_gen()
+                task_masks, ids_keep, ids_restore = mask_gen()
         else:
             mask_all = torch.cat([task_masks[task] for task in input_task_tokens.keys()], dim=1)
             ids_shuffle = torch.argsort(mask_all, dim=1)

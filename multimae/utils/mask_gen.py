@@ -72,10 +72,18 @@ class MaskGenerator:
     
     def random_mask_gen(self):
         masks = self.rand_mask(self.num_encoded_tokens, self.num_all_tokens, self.batch_size, self.device)
-        masks = rearrange(masks, "b (nx nt) -> b nx nt", nt=self.num_tasks)
-        return {d: masks[:, :, i] for i, d in enumerate(self.input_domains)}
+        ids_shuffle = torch.argsort(masks, dim=1)
+        ids_restore = torch.argsort(ids_shuffle, dim=1)
+        ids_keep = ids_shuffle[:, :self.num_encoded_tokens]
 
-    def non_overlap_mask_gen(self, patch_dims):
+        # split masks to each domain
+        num_tokens_per_task = [task_tokens.shape[1] for task_tokens in self.input_tokens.values()]
+        task_masks = torch.split(masks, num_tokens_per_task, dim=1)
+        task_masks = {domain: mask for domain, mask in zip(self.input_tokens.keys(), task_masks)}
+        
+        return task_masks, ids_keep, ids_restore
+
+    def non_overlap_mask_gen(self, patch_dims=(14, 14)):
         
         if self.num_tasks == 1:
             return self.random_mask_gen()
@@ -84,32 +92,44 @@ class MaskGenerator:
         nh, nw = patch_dims
         num_patches = nh * nw
         num_encoded_tokens = min(self.num_encoded_tokens, num_patches)
-        pos_idx = torch.arange(self.num_encoded_tokens).unsqueeze(0).expand(self.batch_size, -1)
+        pos_idx = torch.arange(self.num_encoded_tokens, device=self.device).unsqueeze(0).expand(self.batch_size, -1)
         
         # assign random number of encoded tokens to each domain
         # sum up to num_encoded_tokens <= num_tokens_per_image
-        token_splits = torch.randint(0, num_encoded_tokens, (self.batch_size, self.num_tasks - 1))
+        token_splits = torch.randint(0, num_encoded_tokens, (self.batch_size, self.num_tasks - 1), device=self.device)
         token_splits, _ = torch.sort(token_splits, dim=1)
         token_splits = torch.cat([token_splits, 
-                                  torch.tensor(num_encoded_tokens).unsqueeze(0).expand(self.batch_size, 1)], dim=1)
+                                  torch.tensor(num_encoded_tokens, device=self.device).unsqueeze(0).expand(self.batch_size, 1)], dim=1)
         
         # Use noise to shuffle arange
-        noise = torch.rand(self.batch_size, num_patches)  # noise in [0, 1]
+        noise = torch.rand(self.batch_size, num_patches, device=self.device)  # noise in [0, 1]
         ids_arange_shuffle = torch.argsort(noise, dim=1)  # ascend: small is keep, large is remove
         random_pos_idx = torch.gather(pos_idx, dim=1, index=ids_arange_shuffle)
 
         # split tokens to each domain
         task_masks = []
         for i in range(self.num_tasks):
-            mask_left = torch.where(random_pos_idx < token_splits[:, i].unsqueeze(1), 0, 1)
+            mask_left = torch.where(random_pos_idx <= token_splits[:, i].unsqueeze(1), 0, 1)
             if i > 0:
                 mask_right = torch.where(random_pos_idx > token_splits[:, i - 1].unsqueeze(1), 0, 1)
                 mask = torch.logical_or(mask_left, mask_right) * 1
             else:
                 mask = mask_left
             task_masks.append(mask)
+            
+        # concatenate masks and indexing
+        masks = torch.cat(task_masks, dim=1)
+        print(torch.sum((masks == 0), dim=1))
+        ids_shuffle = torch.argsort(masks, dim=1)
+        ids_restore = torch.argsort(ids_shuffle, dim=1)
+        ids_keep = ids_shuffle[:, :self.num_encoded_tokens]
+
+        # split masks to each domain
+        num_tokens_per_task = [task_tokens.shape[1] for task_tokens in self.input_tokens.values()]
+        task_masks = torch.split(masks, num_tokens_per_task, dim=1)
+        task_masks = {domain: mask for domain, mask in zip(self.input_tokens.keys(), task_masks)}
         
-        return {d:m for d, m in zip(self.input_domains, task_masks)}
+        return task_masks, ids_keep, ids_restore
     
     def object_oriented_mask_gen(self, inputs, patch_dims=(14, 14), patch_size=(16, 16), px_thresh=0.1, semseg_stride=4):
         
