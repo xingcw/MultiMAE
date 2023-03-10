@@ -4,6 +4,7 @@
 # https://github.com/BUPT-PRIV/MAE-priv
 # --------------------------------------------------------
 
+import torch
 from .registry import is_model_in_modules, model_entrypoint
 
 
@@ -72,5 +73,11 @@ def create_model(
 
     create_fn = model_entrypoint(model_name)
     model = create_fn(**kwargs)
-
+    
+    if pretrained:
+        CKPT_URL = 'https://github.com/EPFL-VILAB/MultiMAE/releases/download/pretrained-weights/multimae-b_98_rgb+-depth-semseg_1600e_multivit-afff3f8c.pth'
+        ckpt = torch.hub.load_state_dict_from_url(CKPT_URL, map_location='cpu')
+        model.load_state_dict(ckpt["model"], strict=False)
+        print("Successfully load the pretrained weights from torch hub.")
+        
     return model

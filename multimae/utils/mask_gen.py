@@ -131,7 +131,13 @@ class MaskGenerator:
         
         return task_masks, ids_keep, ids_restore
     
-    def object_oriented_mask_gen(self, inputs, patch_dims=(14, 14), patch_size=(16, 16), px_thresh=0.1, semseg_stride=4):
+    def object_oriented_mask_gen(self, 
+                                 inputs, 
+                                 patch_dims=(14, 14), 
+                                 patch_size=(16, 16), 
+                                 px_thresh=0.1, 
+                                 semseg_stride=4, 
+                                 masked_rgb_gate_only=False):
         
         if "semseg" not in self.input_domains:
             return self.random_mask_gen()
@@ -145,10 +151,12 @@ class MaskGenerator:
         fine_masks[semseg == 3] = 1              # 3 -> "gate"
         fine_masks = rearrange(fine_masks, "B (nh h) (nw w) -> B (nh nw) (h w)", B=self.batch_size, nh=nh, nw=nw)
         rgb_mask = (torch.sum(fine_masks, dim=2) > num_px_thresh) * 1
+        
         # ensure number of encoded rgb tokens less than num_encoded_tokens
-        num_addition_encoded_tokens = fine_masks.shape[1] - self.num_encoded_tokens
-        addition_masks = self.rand_mask(num_addition_encoded_tokens, fine_masks.shape[1], self.batch_size, self.device)
-        rgb_mask = torch.logical_or(rgb_mask, addition_masks) * 1      
+        if not masked_rgb_gate_only:
+            num_addition_encoded_tokens = fine_masks.shape[1] - self.num_encoded_tokens
+            addition_masks = self.rand_mask(num_addition_encoded_tokens, fine_masks.shape[1], self.batch_size, self.device)
+            rgb_mask = torch.logical_or(rgb_mask, addition_masks) * 1      
         
         # sample masks for other domains        
         num_encoded_tokens = torch.ones(self.batch_size, device=self.device) * self.num_encoded_tokens - (rgb_mask == 0).sum(dim=1)
@@ -158,7 +166,6 @@ class MaskGenerator:
         
         # concatenate masks and indexing
         masks = torch.cat([rgb_mask, rand_masks], dim=1)
-        # print(torch.sum((masks == 0), dim=1))
         ids_shuffle = torch.argsort(masks, dim=1)
         ids_restore = torch.argsort(ids_shuffle, dim=1)
         ids_keep = ids_shuffle[:, :self.num_encoded_tokens]

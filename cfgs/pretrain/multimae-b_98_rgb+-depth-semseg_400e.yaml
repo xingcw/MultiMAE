@@ -1,17 +1,18 @@
 # Input and output tasks
-in_domains: rgb-depth-semseg
+in_domains: rgb-semseg
 out_domains: rgb-semseg
 standardize_depth: True
 extra_norm_pix_loss: True
 
 # Architecture
 model: pretrain_multimae_base
+pretrained: True
 decoder_dim: 256
 input_size: 224
 patch_size: 16
 mask_type: gate-oriented
 alphas: 1.0  # Dirichlet concentration parameter
-num_encoded_tokens: 128 # Total would be 196 * 3 patches. 196 / 2 = 98
+num_encoded_tokens: 98 # Total would be 196 * 3 patches. 196 / 2 = 98
 num_global_tokens: 1
 decoder_use_task_queries: True
 decoder_depth: 2
@@ -37,5 +38,5 @@ eval_data_path: datasets/test/val
 log_wandb: True # Set to True to log to Weights & Biases
 wandb_project: multimae-pretrain
 wandb_entity: xingcw # Change if needed
-wandb_run_name: multimae-b_98_rgb+-semseg_400e
+wandb_run_name: multimae-b_98_rgb-semseg_gate_pretrained
 output_dir: results/pretrain/multimae-b_98_rgb+-semseg_400e # Change directory if needed
