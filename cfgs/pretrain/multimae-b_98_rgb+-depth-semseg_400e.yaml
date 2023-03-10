@@ -28,7 +28,7 @@ batch_size: 128
 hflip: 0.5
 loss_on_unmasked: False
 fp32_output_adapters: semseg
-eval_freq: 10
+eval_freq: 1
 
 # Data
 data_path: datasets/test/train # Change me
@@ -36,7 +36,9 @@ eval_data_path: datasets/test/val
 
 # Wandb logging
 log_wandb: True # Set to True to log to Weights & Biases
-wandb_project: multimae-pretrain
+wandb_project: debugging multimae
 wandb_entity: xingcw # Change if needed
+wandb_log_dir: results
+wandb_log_img: True
 wandb_run_name: multimae-b_98_rgb-semseg_gate_pretrained
 output_dir: results/pretrain/multimae-b_98_rgb+-semseg_400e # Change directory if needed

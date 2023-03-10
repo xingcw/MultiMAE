@@ -3,6 +3,8 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import numpy as np
+from PIL import Image
+
 import torch
 import torch.nn.functional as F
 import torchvision.transforms.functional as TF
@@ -39,13 +41,12 @@ def denormalize(img, mean=IMAGENET_DEFAULT_MEAN, std=IMAGENET_DEFAULT_STD):
         std= [1/s for s in std]
     )
 
-def plot_semseg_gt(input_dict, ax=None, image_size=224):
-    metadata = MetadataCatalog.get("coco_2017_val_panoptic")
+def plot_semseg_gt(input_dict, ax=None, image_size=224, metadata=None):
+    if metadata is None:
+        metadata = MetadataCatalog.get("coco_2017_val_panoptic")
     instance_mode = ColorMode.IMAGE
     img_viz = 255 * denormalize(input_dict['rgb'].detach().cpu())[0].permute(1,2,0)
-    semseg = F.interpolate(
-        input_dict['semseg'].unsqueeze(0).cpu().float(), size=image_size, mode='nearest'
-    ).long()[0,0]
+    semseg = F.interpolate(input_dict['semseg'].unsqueeze(0).cpu().float(), size=image_size, mode='nearest').long()[0,0]
     visualizer = Visualizer(img_viz, metadata, instance_mode=instance_mode, scale=1)
     visualizer.draw_sem_seg(semseg)
     if ax is not None:
@@ -54,8 +55,8 @@ def plot_semseg_gt(input_dict, ax=None, image_size=224):
         return visualizer.get_output().get_image()
 
 
-def plot_semseg_gt_masked(input_dict, mask, ax=None, mask_value=1.0, image_size=224):
-    img = plot_semseg_gt(input_dict, image_size=image_size)
+def plot_semseg_gt_masked(input_dict, mask, ax=None, mask_value=1.0, image_size=224, metadata=None):
+    img = plot_semseg_gt(input_dict, image_size=image_size, metadata=metadata)
     img = torch.LongTensor(img).permute(2,0,1).unsqueeze(0)
     masked_img = get_masked_image(img.float()/255.0, mask, image_size=image_size, patch_size=16, mask_value=mask_value)
     masked_img = masked_img[0].permute(1,2,0)
@@ -86,8 +87,9 @@ def get_pred_with_input(gt, pred, mask, image_size=224, patch_size=16):
     return img
 
 
-def plot_semseg_pred_masked(rgb, semseg_preds, semseg_gt, mask, ax=None, image_size=224):
-    metadata = MetadataCatalog.get("coco_2017_val_panoptic")
+def plot_semseg_pred_masked(rgb, semseg_preds, semseg_gt, mask, ax=None, image_size=224, metadata=None):
+    if metadata is None:
+        metadata = MetadataCatalog.get("coco_2017_val_panoptic")
     instance_mode = ColorMode.IMAGE
     img_viz = 255 * denormalize(rgb.detach().cpu())[0].permute(1,2,0)
     
@@ -107,8 +109,9 @@ def plot_semseg_pred_masked(rgb, semseg_preds, semseg_gt, mask, ax=None, image_s
         ax.imshow(visualizer.get_output().get_image())
     else:
         return visualizer.get_output().get_image()
+    
 
-def plot_predictions(input_dict, preds, masks, image_size=224, show_img=True):
+def plot_predictions(input_dict, preds, masks, image_size=224, show_img=True, metadata=None, return_fig=False):
 
     masked_rgb = get_masked_image(
         denormalize(input_dict['rgb']), 
@@ -145,7 +148,7 @@ def plot_predictions(input_dict, preds, masks, image_size=224, show_img=True):
             image_size=image_size
         )[0,0].detach().cpu()
 
-    if show_img:
+    if show_img or return_fig:
         fig = plt.figure(figsize=(10, 10))
         nrows = 1 + use_depth + use_semseg
         grid = ImageGrid(fig, 111, nrows_ncols=(nrows, 3), axes_pad=0)
@@ -168,14 +171,20 @@ def plot_predictions(input_dict, preds, masks, image_size=224, show_img=True):
         
         if use_semseg:
             start_idx = 6 if use_depth else 3
-            plot_semseg_gt_masked(input_dict, masks['semseg'], grid[start_idx], mask_value=1.0, image_size=image_size)
-            plot_semseg_pred_masked(input_dict['rgb'], preds['semseg'], input_dict['semseg'], masks['semseg'], grid[start_idx+1], image_size=image_size)
-            plot_semseg_gt(input_dict, grid[start_idx+2], image_size=image_size)
+            plot_semseg_gt_masked(input_dict, masks['semseg'], grid[start_idx], mask_value=1.0, 
+                                  image_size=image_size, metadata=metadata)
+            plot_semseg_pred_masked(input_dict['rgb'], preds['semseg'], input_dict['semseg'], masks['semseg'], grid[start_idx+1], 
+                                    image_size=image_size, metadata=metadata)
+            plot_semseg_gt(input_dict, grid[start_idx+2], image_size=image_size, metadata=metadata)
             grid[start_idx].set_ylabel('Semantic', fontsize=fontsize)
 
         for ax in grid:
             ax.set_xticks([])
             ax.set_yticks([])
+        
+        if return_fig:
+            fig.canvas.draw()
+            return Image.frombytes('RGB', fig.canvas.get_width_height(), fig.canvas.tostring_rgb())
                     
     return {
         'rgb_input': masked_rgb,
@@ -184,7 +193,7 @@ def plot_predictions(input_dict, preds, masks, image_size=224, show_img=True):
         'depth_input': masked_depth if use_depth else None,
         'depth_pred': pred_depth2 if use_depth else None,
         'depth_gt': input_dict['depth'][0,0].detach().cpu() if use_depth else None,
-        'semseg_input': plot_semseg_gt_masked(input_dict, masks['semseg'], mask_value=1.0) if use_semseg else None,
-        'semseg_pred': plot_semseg_pred_masked(input_dict['rgb'], preds['semseg'], input_dict['semseg'], masks['semseg']) if use_semseg else None,
-        'semseg_gt': plot_semseg_gt(input_dict) if use_semseg else None
+        'semseg_input': plot_semseg_gt_masked(input_dict, masks['semseg'], mask_value=1.0, metadata=metadata) if use_semseg else None,
+        'semseg_pred': plot_semseg_pred_masked(input_dict['rgb'], preds['semseg'], input_dict['semseg'], masks['semseg'], metadata=metadata) if use_semseg else None,
+        'semseg_gt': plot_semseg_gt(input_dict, metadata=metadata) if use_semseg else None
     }

@@ -181,6 +181,7 @@ class WandbLogger(object):
     def __init__(self, args):
         wandb.init(
             config=args,
+            dir=args.wandb_log_dir,
             entity=args.wandb_entity,
             project=args.wandb_project,
             group=getattr(args, 'wandb_group', None),

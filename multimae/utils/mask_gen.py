@@ -119,7 +119,7 @@ class MaskGenerator:
             
         # concatenate masks and indexing
         masks = torch.cat(task_masks, dim=1)
-        print(torch.sum((masks == 0), dim=1))
+        # print(torch.sum((masks == 0), dim=1))
         ids_shuffle = torch.argsort(masks, dim=1)
         ids_restore = torch.argsort(ids_shuffle, dim=1)
         ids_keep = ids_shuffle[:, :self.num_encoded_tokens]

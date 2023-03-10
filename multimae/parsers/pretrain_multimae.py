@@ -150,6 +150,9 @@ def get_args():
                         help='Log training and validation metrics to wandb')
     parser.add_argument('--no_log_wandb', action='store_false', dest='log_wandb')
     parser.set_defaults(log_wandb=False)
+    parser.add_argument('--wandb_log_img', action="store_true", help="whether to log images to wandb")
+    parser.add_argument('--wandb_log_dir', default=None, type=str,
+                        help="path to store the wandb records.")
     parser.add_argument('--wandb_project', default=None, type=str,
                         help='Project name on wandb')
     parser.add_argument('--wandb_entity', default=None, type=str,
@@ -157,6 +160,7 @@ def get_args():
     parser.add_argument('--wandb_run_name', default=None, type=str,
                         help='Run name on wandb')
     parser.add_argument('--show_user_warnings', default=False, action='store_true')
+    
 
     # Distributed training parameters
     parser.add_argument('--world_size', default=1, type=int,
@@ -185,5 +189,8 @@ def get_args():
     # configure save dir
     timestamp = datetime.datetime.now().strftime("%m-%d-%H-%M-%S")
     args.output_dir = str(multimae_path / args.output_dir / timestamp)
+    
+    # configure wandb log dir
+    args.wandb_log_dir = str(multimae_path / args.wandb_log_dir)
 
     return args

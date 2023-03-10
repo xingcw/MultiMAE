@@ -30,6 +30,7 @@ from typing import Dict, Iterable, List
 import numpy as np
 import torch
 import torch.backends.cudnn as cudnn
+import torch.nn.functional as F
 
 # do not forget to import `multimae` here
 from multimae.models import multimae
@@ -46,9 +47,11 @@ from multimae.utils.data_constants import CUSTOM_SEMSEG_NUM_CLASSES, COCO_SEMSEG
 from multimae.utils.datasets import build_multimae_pretraining_dataset
 from multimae.utils.optim_factory import create_optimizer
 from multimae.parsers.pretrain_multimae import get_args
+from multimae.utils.log_images import log_multimae_semseg_wandb
 from multimae.utils.task_balancing import (NoWeightingStrategy,
                                   UncertaintyWeightingStrategy)
 from pipelines.utils.log_utils import get_logger
+from pipelines.utils.data_utils import get_semseg_metadata
 
 
 DOMAIN_CONF = {
@@ -198,7 +201,10 @@ def main(args):
     else:
         log_writer = None
 
-    print(args)
+    print(vars(args))
+    
+    # configure for detectron dataset (for prediection)
+    metadata = get_semseg_metadata(args.eval_data_path)
 
     data_loader_train = torch.utils.data.DataLoader(
         dataset_train, sampler=sampler_train,
@@ -313,7 +319,9 @@ def main(args):
                 extra_norm_pix_loss=args.extra_norm_pix_loss,
                 fp32_output_adapters=args.fp32_output_adapters.split('-'),
                 dp_logger=dp_logger,
-                mask_type=args.mask_type
+                mask_type=args.mask_type,
+                log_images=args.wandb_log_img,
+                metadata=metadata
             )
             log_stats.update(val_stats)
         
@@ -467,11 +475,15 @@ def validate(model: torch.nn.Module, data_loader: Iterable, tasks_loss_fn: Dict[
             loss_balancer: torch.nn.Module, device: torch.device, epoch: int, 
             num_encoded_tokens: int = 196, in_domains: List[str] = [] , loss_on_unmasked: bool = True,
             alphas: float = 1.0, sample_tasks_uniformly: bool = False, standardize_depth: bool = True,
-            extra_norm_pix_loss: bool = False, fp32_output_adapters: List[str] = [], dp_logger=None, mask_type: str = "dirichlet"):
+            extra_norm_pix_loss: bool = False, fp32_output_adapters: List[str] = [], 
+            dp_logger=None, mask_type: str = "dirichlet", log_images=False, metadata=None):
     model.eval()
     metric_logger = utils.MetricLogger(delimiter="  ")
     header = '(Val) Epoch: [{}]'.format(epoch)
     print_freq = 10
+    
+    if log_images:
+        log_inputs, log_preds,log_masks = None, None, None
 
     for step, (x, _) in enumerate(metric_logger.log_every(data_loader, print_freq, header, dp_logger)):
         tasks_dict = {
@@ -489,30 +501,29 @@ def validate(model: torch.nn.Module, data_loader: Iterable, tasks_loss_fn: Dict[
             if task in in_domains
         }
 
-        with torch.cuda.amp.autocast():
-            preds, masks = model(
-                input_dict, 
-                num_encoded_tokens=num_encoded_tokens, 
-                alphas=alphas, 
-                sample_tasks_uniformly=sample_tasks_uniformly,
-                fp32_output_adapters=fp32_output_adapters,
-                mask_type=mask_type
-            )
+        preds, masks = model(
+            input_dict, 
+            num_encoded_tokens=num_encoded_tokens, 
+            alphas=alphas, 
+            sample_tasks_uniformly=sample_tasks_uniformly,
+            fp32_output_adapters=fp32_output_adapters,
+            mask_type=mask_type
+        )
 
-            if extra_norm_pix_loss:
-                tasks_dict['norm_rgb'] = tasks_dict['rgb']
-                masks['norm_rgb'] = masks.get('rgb', None)
+        if extra_norm_pix_loss:
+            tasks_dict['norm_rgb'] = tasks_dict['rgb']
+            masks['norm_rgb'] = masks.get('rgb', None)
 
-            task_losses = {}
-            for task in preds:
-                target = tasks_dict[task]
-                    
-                if loss_on_unmasked:
-                    task_losses[task] = tasks_loss_fn[task](preds[task].float(), target)
-                else:
-                    task_losses[task] = tasks_loss_fn[task](preds[task].float(), target, mask=masks.get(task, None))
+        task_losses = {}
+        for task in preds:
+            target = tasks_dict[task]
+                
+            if loss_on_unmasked:
+                task_losses[task] = tasks_loss_fn[task](preds[task].float(), target)
+            else:
+                task_losses[task] = tasks_loss_fn[task](preds[task].float(), target, mask=masks.get(task, None))
 
-            weighted_task_losses = loss_balancer(task_losses)
+        weighted_task_losses = loss_balancer(task_losses)
 
         loss_value = sum(task_losses.values()).item()
         task_loss_values = {f'{task}_loss': l.item() for task, l in task_losses.items()}
@@ -528,7 +539,13 @@ def validate(model: torch.nn.Module, data_loader: Iterable, tasks_loss_fn: Dict[
         metric_logger.update(**task_loss_values)
         metric_logger.update(**weighted_task_loss_values)
         
+        if log_images and log_inputs is None:
+            log_inputs, log_preds, log_masks = input_dict, preds, masks
+        
     eval_metrics = {"val/" + k: meter.global_avg for k, meter in metric_logger.meters.items()}
+    
+    if log_images and utils.is_main_process():
+        log_multimae_semseg_wandb(log_inputs, log_preds, log_masks, prefix='plots/val', metadata=metadata)
 
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
