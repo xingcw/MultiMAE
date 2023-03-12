@@ -16,6 +16,8 @@ import os
 import random
 
 import numpy as np
+from PIL import Image
+
 import torch
 import torchvision.transforms.functional as TF
 from torchvision import datasets, transforms
@@ -86,7 +88,7 @@ class DataAugmentationForMultiMAE(object):
                 )
             i, j, h, w = ijhw
             task_dict[task] = TF.crop(task_dict[task], i, j, h, w)
-            task_dict[task] = task_dict[task].resize((self.input_size, self.input_size))
+            task_dict[task] = task_dict[task].resize((self.input_size, self.input_size), Image.NEAREST)
             if flip:
                 task_dict[task] = TF.hflip(task_dict[task])
                 

@@ -277,27 +277,18 @@ def main(args):
             model=model,
             data_loader=data_loader_train,
             tasks_loss_fn=tasks_loss_fn,
-            loss_balancer=loss_balancer,
-            optimizer=optimizer,
-            device=device,
-            epoch=epoch,
-            loss_scaler=loss_scaler,
-            max_norm=args.clip_grad,
-            max_skip_norm=args.skip_grad,
-            log_writer=log_writer,
             start_steps=epoch * num_training_steps_per_epoch,
             lr_schedule_values=lr_schedule_values,
             wd_schedule_values=wd_schedule_values,
-            num_encoded_tokens=args.num_encoded_tokens,
-            in_domains=args.in_domains,
-            loss_on_unmasked=args.loss_on_unmasked,
-            alphas=args.alphas,
-            sample_tasks_uniformly=args.sample_tasks_uniformly,
-            standardize_depth=args.standardize_depth,
-            extra_norm_pix_loss=args.extra_norm_pix_loss,
-            fp32_output_adapters=args.fp32_output_adapters.split('-'),
-            dp_logger=dp_logger,
-            mask_type=args.mask_type
+            loss_balancer=loss_balancer,
+            loss_scaler=loss_scaler,
+            optimizer=optimizer,
+            device=device,
+            epoch=epoch,
+            args=args,
+            
+            log_writer=log_writer,
+            dp_logger=dp_logger
         )
         
         log_stats = deepcopy(train_stats)
@@ -310,18 +301,9 @@ def main(args):
                 loss_balancer=loss_balancer,
                 device=device,
                 epoch=epoch,
-                num_encoded_tokens=args.num_encoded_tokens,
-                in_domains=args.in_domains,
-                loss_on_unmasked=args.loss_on_unmasked,
-                alphas=args.alphas,
-                sample_tasks_uniformly=args.sample_tasks_uniformly,
-                standardize_depth=args.standardize_depth,
-                extra_norm_pix_loss=args.extra_norm_pix_loss,
-                fp32_output_adapters=args.fp32_output_adapters.split('-'),
-                dp_logger=dp_logger,
-                mask_type=args.mask_type,
-                log_images=args.wandb_log_img,
-                metadata=metadata
+                metadata=metadata,
+                args=args,
+                dp_logger=dp_logger
             )
             log_stats.update(val_stats)
         
@@ -346,19 +328,42 @@ def main(args):
 
 
 def train_one_epoch(model: torch.nn.Module, data_loader: Iterable, tasks_loss_fn: Dict[str, torch.nn.Module],
-                    loss_balancer: torch.nn.Module, optimizer: torch.optim.Optimizer, 
-                    device: torch.device, epoch: int, loss_scaler, max_norm: float = None, max_skip_norm: float = None,
-                    log_writer=None, lr_scheduler=None, start_steps=None, lr_schedule_values=None, wd_schedule_values=None,
-                    num_encoded_tokens: int = 196, in_domains: List[str] = [] , loss_on_unmasked: bool = True,
-                    alphas: float = 1.0, sample_tasks_uniformly: bool = False, standardize_depth: bool = True,
-                    extra_norm_pix_loss: bool = False, fp32_output_adapters: List[str] = [], dp_logger=None, mask_type: str = "dirichlet"):
+                    loss_balancer: torch.nn.Module, optimizer: torch.optim.Optimizer, start_steps: int, 
+                    device: torch.device, epoch: int, loss_scaler, args, 
+                    lr_schedule_values: List[float] = None, wd_schedule_values: List[float] = None, 
+                    log_writer=None, lr_scheduler=None, dp_logger=None):    
+    # assign args values to local variables
+    max_norm=args.clip_grad
+    max_skip_norm=args.skip_grad
+    num_encoded_tokens=args.num_encoded_tokens
+    in_domains=args.in_domains
+    loss_on_unmasked=args.loss_on_unmasked
+    alphas=args.alphas
+    sample_tasks_uniformly=args.sample_tasks_uniformly
+    standardize_depth=args.standardize_depth
+    extra_norm_pix_loss=args.extra_norm_pix_loss
+    fp32_output_adapters=args.fp32_output_adapters.split('-')
+    mask_type=args.mask_type
+    masked_rgb_gate_only=args.masked_rgb_gate_only
+    
+    if loss_on_unmasked:
+        task_loss_types = {}
+        tasks_loss_unmask = loss_on_unmasked.split('-')
+        for task in tasks_loss_fn.keys():
+            if task in tasks_loss_unmask:
+                task_loss_types[task] = 'unmask'
+            else:
+                task_loss_types[task] = 'mask'
+    else:
+        task_loss_types = {task: 'mask' for task in tasks_loss_fn.keys()}
+        
     model.train()
     metric_logger = utils.MetricLogger(delimiter="  ")
     metric_logger.add_meter('lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
     metric_logger.add_meter('min_lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
     header = 'Epoch: [{}]'.format(epoch)
     print_freq = 10
-
+        
     for step, (x, _) in enumerate(metric_logger.log_every(data_loader, print_freq, header, dp_logger)):
         # assign learning rate & weight decay for each step
         it = start_steps + step  # global training iteration
@@ -391,7 +396,8 @@ def train_one_epoch(model: torch.nn.Module, data_loader: Iterable, tasks_loss_fn
                 alphas=alphas, 
                 sample_tasks_uniformly=sample_tasks_uniformly,
                 fp32_output_adapters=fp32_output_adapters,
-                mask_type=mask_type
+                mask_type=mask_type,
+                masked_rgb_gate_only=masked_rgb_gate_only
             )
 
             if extra_norm_pix_loss:
@@ -399,10 +405,11 @@ def train_one_epoch(model: torch.nn.Module, data_loader: Iterable, tasks_loss_fn
                 masks['norm_rgb'] = masks.get('rgb', None)
 
             task_losses = {}
+    
             for task in preds:
                 target = tasks_dict[task]
-                    
-                if loss_on_unmasked:
+                unmask_loss = task_loss_types[task] == 'unmask'
+                if unmask_loss:
                     task_losses[task] = tasks_loss_fn[task](preds[task].float(), target)
                 else:
                     task_losses[task] = tasks_loss_fn[task](preds[task].float(), target, mask=masks.get(task, None))
@@ -472,18 +479,39 @@ def train_one_epoch(model: torch.nn.Module, data_loader: Iterable, tasks_loss_fn
 
 @torch.no_grad()
 def validate(model: torch.nn.Module, data_loader: Iterable, tasks_loss_fn: Dict[str, torch.nn.Module],
-            loss_balancer: torch.nn.Module, device: torch.device, epoch: int, 
-            num_encoded_tokens: int = 196, in_domains: List[str] = [] , loss_on_unmasked: bool = True,
-            alphas: float = 1.0, sample_tasks_uniformly: bool = False, standardize_depth: bool = True,
-            extra_norm_pix_loss: bool = False, fp32_output_adapters: List[str] = [], 
-            dp_logger=None, mask_type: str = "dirichlet", log_images=False, metadata=None):
+            loss_balancer: torch.nn.Module, device: torch.device, epoch: int, args, metadata=None, dp_logger=None):
+    
+    # assgin parser args to local variables
+    num_encoded_tokens=args.num_encoded_tokens
+    in_domains=args.in_domains
+    loss_on_unmasked=args.loss_on_unmasked
+    alphas=args.alphas
+    sample_tasks_uniformly=args.sample_tasks_uniformly
+    standardize_depth=args.standardize_depth
+    extra_norm_pix_loss=args.extra_norm_pix_loss
+    fp32_output_adapters=args.fp32_output_adapters.split('-')
+    mask_type=args.mask_type
+    log_images=args.wandb_log_img
+    masked_rgb_gate_only=args.masked_rgb_gate_only
+    
+    if loss_on_unmasked:
+        task_loss_types = {}
+        tasks_loss_unmask = loss_on_unmasked.split('-')
+        for task in tasks_loss_fn.keys():
+            if task in tasks_loss_unmask:
+                task_loss_types[task] = 'unmask'
+            else:
+                task_loss_types[task] = 'mask'
+    else:
+        task_loss_types = {task: 'mask' for task in tasks_loss_fn.keys()}
+    
+    if log_images:
+        log_inputs, log_preds,log_masks = None, None, None
+        
     model.eval()
     metric_logger = utils.MetricLogger(delimiter="  ")
     header = '(Val) Epoch: [{}]'.format(epoch)
     print_freq = 10
-    
-    if log_images:
-        log_inputs, log_preds,log_masks = None, None, None
 
     for step, (x, _) in enumerate(metric_logger.log_every(data_loader, print_freq, header, dp_logger)):
         tasks_dict = {
@@ -507,7 +535,8 @@ def validate(model: torch.nn.Module, data_loader: Iterable, tasks_loss_fn: Dict[
             alphas=alphas, 
             sample_tasks_uniformly=sample_tasks_uniformly,
             fp32_output_adapters=fp32_output_adapters,
-            mask_type=mask_type
+            mask_type=mask_type,
+            masked_rgb_gate_only=masked_rgb_gate_only
         )
 
         if extra_norm_pix_loss:
@@ -515,10 +544,12 @@ def validate(model: torch.nn.Module, data_loader: Iterable, tasks_loss_fn: Dict[
             masks['norm_rgb'] = masks.get('rgb', None)
 
         task_losses = {}
+        
         for task in preds:
             target = tasks_dict[task]
+            unmask_loss = task_loss_types[task] == 'unmask'
                 
-            if loss_on_unmasked:
+            if unmask_loss:
                 task_losses[task] = tasks_loss_fn[task](preds[task].float(), target)
             else:
                 task_losses[task] = tasks_loss_fn[task](preds[task].float(), target, mask=masks.get(task, None))
@@ -540,7 +571,7 @@ def validate(model: torch.nn.Module, data_loader: Iterable, tasks_loss_fn: Dict[
         metric_logger.update(**weighted_task_loss_values)
         
         if log_images and log_inputs is None:
-            log_inputs, log_preds, log_masks = input_dict, preds, masks
+            log_inputs, log_preds, log_masks = tasks_dict, preds, masks
         
     eval_metrics = {"val/" + k: meter.global_avg for k, meter in metric_logger.meters.items()}
     

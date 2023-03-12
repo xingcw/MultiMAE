@@ -46,6 +46,8 @@ def get_args():
                         help='Images input size for backbone (default: %(default)s)')
     parser.add_argument('--mask_type', default="dirichlet", type=str, 
                         help="method used to generate masks for input tokens.")
+    parser.add_argument('--masked_rgb_gate_only', default=False, action='store_true',
+                        help='Set to True/False to enable/disable masking of RGB tokens only on gates.')
     parser.add_argument('--alphas', type=float, default=1.0, 
                         help='Dirichlet alphas concentration parameter (default: %(default)s)')
     parser.add_argument('--sample_tasks_uniformly', default=False, action='store_true',
@@ -64,10 +66,8 @@ def get_args():
     parser.add_argument('--drop_path', type=float, default=0.0, metavar='PCT',
                         help='Drop path rate (default: %(default)s)')
 
-    parser.add_argument('--loss_on_unmasked', default=False, action='store_true',
-                        help='Set to True/False to enable/disable computing the loss on non-masked tokens')
-    parser.add_argument('--no_loss_on_unmasked', action='store_false', dest='loss_on_unmasked')
-    parser.set_defaults(loss_on_unmasked=False)
+    parser.add_argument('--loss_on_unmasked', type=str, default='semseg',
+                        help='domains to computing the loss on non-masked tokens')
 
 
     # Optimizer parameters
@@ -192,5 +192,6 @@ def get_args():
     
     # configure wandb log dir
     args.wandb_log_dir = str(multimae_path / args.wandb_log_dir)
+    args.wandb_run_name = args.wandb_run_name + "_" + timestamp
 
     return args

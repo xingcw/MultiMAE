@@ -7,22 +7,32 @@ from PIL import Image
 from pathlib import Path
 
 
-def extract_data_from_racing(data_folder, target_folder, depth_format="tiff"):
+def extract_data_from_racing(data_folder, target_folder, train_val_split=0.8, depth_format="tiff", sample_method="random"):
     """Extracts data from the racing dataset and saves it in the desired format.
 
     Args:
         data_folder (str): source folder containing the data
         target_folder (str): target folder where the data should be saved
+        train_val_split (float, optional): fraction of data to use for training. Defaults to 0.8.
         depth_format (str, optional): desired depth image format. Defaults to "tiff".
+        sample_method (str, optional): method to sample the data. Defaults to "random".
     """
     total_num_imgs = 0
+    if sample_method == "random":
+        probs = np.random.uniform(0, 1, 2^16)
+    else:
+        val_freq = 1 / (1 - train_val_split)
 
     for env_folder in sorted(os.listdir(data_folder)):
         for trial_folder in sorted(os.listdir(data_folder / env_folder)):
             sample_folder = data_folder / env_folder / trial_folder
             for file in sorted(glob.glob(str(sample_folder / "*.npz"))):
                 
-                split = "train" if total_num_imgs % 5 != 0 else "val"
+                if sample_method == "random":
+                    split = "train" if probs[total_num_imgs] < train_val_split else "val"
+                else:
+                    split = "train" if total_num_imgs % val_freq != 0 else "val"
+                    
                 old_file_name = Path(file).stem.strip()
                 # copy rgb image
                 rgb_path = sample_folder / f"{old_file_name}_rgb.png"
@@ -55,3 +65,10 @@ def extract_data_from_racing(data_folder, target_folder, depth_format="tiff"):
                 total_num_imgs += 1
                 
     print(f"Total number of images: {total_num_imgs}")
+    
+    
+if __name__ == "__main__":
+    
+    flightmare_path = Path(os.environ["FLIGHTMARE_PATH"])
+    multimae_path = flightmare_path.parent / "vision_backbones/MultiMAE"
+    data_folder = multimae_path / "datasets/test"

@@ -276,7 +276,8 @@ class MultiMAE(nn.Module):
                 alphas: Union[float, List[float]] = 1.0,
                 sample_tasks_uniformly: bool = False,
                 fp32_output_adapters: List[str] = [], 
-                mask_type: str = "dirichlet"):
+                mask_type: str = "dirichlet", 
+                **kwargs):
         """
         Forward pass through input adapters, transformer encoder and output adapters.
         If specified, will randomly drop input tokens.
@@ -331,7 +332,7 @@ class MultiMAE(nn.Module):
             if mask_gen.mask_type == "dirichlet":
                 task_masks, ids_keep, ids_restore = mask_gen(alphas=alphas, sample_tasks_uniformly=sample_tasks_uniformly)
             elif mask_gen.mask_type == "gate-oriented":
-                task_masks, ids_keep, ids_restore = mask_gen(inputs=x)
+                task_masks, ids_keep, ids_restore = mask_gen(inputs=x, **kwargs)
             else:
                 task_masks, ids_keep, ids_restore = mask_gen()
         else:

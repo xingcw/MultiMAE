@@ -46,16 +46,17 @@ def log_multimae_semseg_wandb(
         for i in range(image_count):
             common_inputs = {k: inputs[k][i].unsqueeze(0) for k in common_domains}
             common_preds = {k: preds[k][i].unsqueeze(0) for k in common_domains}
-            common_masks = {k: masks[k][i].unsqueeze(0) for k in common_domains}
+            common_masks = {k: masks[k][i].unsqueeze(0) if k in masks else torch.ones_like(list(masks.values())[0][i].unsqueeze(0))
+                            for k in common_domains}
             unify_plot = plot_predictions(common_inputs, common_preds, common_masks, 
                                           show_img=False, metadata=metadata, return_fig=True)
             log_images[f"{prefix}_compare_{i}"] = wandb.Image(unify_plot)
     
-    rgb_imgs = inputs["rgb"]
+    rgb_imgs = inputs["rgb"] if "rgb" in common_domains else None
     image_count = min(len(rgb_imgs), image_count)
-    depth_gts = inputs["depth"] if "depth" in preds else None
-    semseg_gts = inputs["semseg"] if "semseg" in preds else []
-    semseg_preds = preds["semseg"] if "semseg" in preds else []
+    depth_gts = inputs["depth"] if "depth" in common_domains else None
+    semseg_gts = inputs["semseg"] if "semseg" in common_domains else []
+    semseg_preds = preds["semseg"] if "semseg" in common_domains else []
     
     rgb_imgs = rgb_imgs[:image_count]
     semseg_preds = semseg_preds[:image_count]
