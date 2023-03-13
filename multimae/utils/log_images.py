@@ -35,7 +35,8 @@ def log_multimae_semseg_wandb(
     masks: Dict[str, torch.Tensor],
     image_count=3,
     prefix: str = "",
-    metadata = None
+    metadata = None,
+    semseg_stride: int = 4
 ):
     log_images = {}
     class_labels = UNITY_COARSE_SEM_LABELS  
@@ -48,7 +49,7 @@ def log_multimae_semseg_wandb(
             common_preds = {k: preds[k][i].unsqueeze(0) for k in common_domains}
             common_masks = {k: masks[k][i].unsqueeze(0) if k in masks else torch.ones_like(list(masks.values())[0][i].unsqueeze(0))
                             for k in common_domains}
-            unify_plot = plot_predictions(common_inputs, common_preds, common_masks, 
+            unify_plot = plot_predictions(common_inputs, common_preds, common_masks, semseg_stride=semseg_stride,
                                           show_img=False, metadata=metadata, return_fig=True)
             log_images[f"{prefix}_compare_{i}"] = wandb.Image(unify_plot)
     

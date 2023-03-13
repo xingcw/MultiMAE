@@ -87,7 +87,7 @@ def get_pred_with_input(gt, pred, mask, image_size=224, patch_size=16):
     return img
 
 
-def plot_semseg_pred_masked(rgb, semseg_preds, semseg_gt, mask, ax=None, image_size=224, metadata=None):
+def plot_semseg_pred_masked(rgb, semseg_preds, semseg_gt, mask, ax=None, image_size=224, metadata=None, semseg_stride=4):
     if metadata is None:
         metadata = MetadataCatalog.get("coco_2017_val_panoptic")
     instance_mode = ColorMode.IMAGE
@@ -97,8 +97,8 @@ def plot_semseg_pred_masked(rgb, semseg_preds, semseg_gt, mask, ax=None, image_s
         semseg_gt.unsqueeze(1), 
         semseg_preds.argmax(1).unsqueeze(1), 
         mask, 
-        image_size=image_size//4, 
-        patch_size=4
+        image_size=image_size // semseg_stride, 
+        patch_size=16 // semseg_stride
     )
     
     semseg = F.interpolate(semseg.float(), size=image_size, mode='nearest')[0,0].long()
@@ -111,7 +111,7 @@ def plot_semseg_pred_masked(rgb, semseg_preds, semseg_gt, mask, ax=None, image_s
         return visualizer.get_output().get_image()
     
 
-def plot_predictions(input_dict, preds, masks, image_size=224, show_img=True, metadata=None, return_fig=False):
+def plot_predictions(input_dict, preds, masks, image_size=224, semseg_stride=4, show_img=True, metadata=None, return_fig=False):
 
     masked_rgb = get_masked_image(
         denormalize(input_dict['rgb']), 
@@ -174,7 +174,7 @@ def plot_predictions(input_dict, preds, masks, image_size=224, show_img=True, me
             plot_semseg_gt_masked(input_dict, masks['semseg'], grid[start_idx], mask_value=1.0, 
                                   image_size=image_size, metadata=metadata)
             plot_semseg_pred_masked(input_dict['rgb'], preds['semseg'], input_dict['semseg'], masks['semseg'], grid[start_idx+1], 
-                                    image_size=image_size, metadata=metadata)
+                                    image_size=image_size, metadata=metadata, semseg_stride=semseg_stride)
             plot_semseg_gt(input_dict, grid[start_idx+2], image_size=image_size, metadata=metadata)
             grid[start_idx].set_ylabel('Semantic', fontsize=fontsize)
 

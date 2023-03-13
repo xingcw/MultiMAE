@@ -72,6 +72,7 @@ class DataAugmentationForMultiMAE(object):
         self.rgb_std = IMAGENET_INCEPTION_STD if not imagenet_default_mean_and_std else IMAGENET_DEFAULT_STD
         self.input_size = args.input_size
         self.hflip = args.hflip
+        self.semseg_stride_level = args.semseg_stride_level
 
     def __call__(self, task_dict):
         flip = random.random() < self.hflip # Stores whether to flip all images or not
@@ -101,10 +102,8 @@ class DataAugmentationForMultiMAE(object):
                 img = TF.to_tensor(task_dict[task])
                 img = TF.normalize(img, mean=self.rgb_mean, std=self.rgb_std)
             elif task in ['semseg', 'semseg_coco']:
-                # TODO: add this to a config instead
-                # Rescale to 0.25x size (stride 4)
-                scale_factor = 0.25
-                img = task_dict[task].resize((int(self.input_size * scale_factor), int(self.input_size * scale_factor)))
+                stride_level = self.semseg_stride_level
+                img = task_dict[task].resize((int(self.input_size / stride_level), int(self.input_size / stride_level)))
                 # Using pil_to_tensor keeps it in uint8, to_tensor converts it to float (rescaled to [0, 1])
                 img = TF.pil_to_tensor(img).to(torch.long).squeeze(0)
                 

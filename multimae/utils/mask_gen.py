@@ -132,65 +132,65 @@ class MaskGenerator:
         return task_masks, ids_keep, ids_restore
     
     def object_oriented_mask_gen(self, 
-                                 inputs, 
+                                 in_domains,
                                  patch_dims=(14, 14), 
                                  patch_size=(16, 16), 
                                  px_thresh=0.1, 
                                  semseg_stride=4, 
-                                 masked_rgb_gate_only=False):
+                                 masked_rgb_gate_only=False,
+                                 semseg_gt=None):
         
-        if "semseg" not in self.input_domains:
+        if semseg_gt is None:
             return self.random_mask_gen()
         
         nh, nw = patch_dims
         ph, pw = patch_size[0] // semseg_stride, patch_size[1] // semseg_stride
         num_px_thresh = int(px_thresh * ph * pw)
         B = self.batch_size
-        # masks on gate for RGB images
-        semseg = inputs["semseg"].detach().clone()
+        
+        # masks on gate for RGB/depth images
+        semseg = semseg_gt.detach().clone()
         fine_masks = torch.zeros_like(semseg, device=self.device)
         fine_masks[semseg == 3] = 1              # 3 -> "gate"
         fine_masks = rearrange(fine_masks, "B (nh h) (nw w) -> B (nh nw) (h w)", B=B, nh=nh, nw=nw)
-        rgb_mask = (torch.sum(fine_masks, dim=2) > 0) * 1
-        num_rgb_tokens = fine_masks.shape[1]
+        main_mask = (torch.sum(fine_masks, dim=2) > 0) * 1
+        num_main_tokens = fine_masks.shape[1]
+        
         # take the inverse of the mask for other domains
-        gate_encoded_masks = torch.logical_not(rgb_mask) * 1
+        gate_encoded_masks = torch.logical_not(main_mask) * 1
         if self.num_tasks > 2:
-            rand_split_mask_semseg = self.rand_mask(num_rgb_tokens // 2, num_rgb_tokens, B, self.device)
-            rand_split_mask_depth = torch.logical_not(rand_split_mask_semseg) * 1
-            semseg_mask = torch.logical_or(gate_encoded_masks, rand_split_mask_semseg) * 1
-            depth_mask = torch.logical_or(gate_encoded_masks, rand_split_mask_depth) * 1
-            rest_mask = torch.cat([depth_mask, semseg_mask], dim=1)
+            rand_split_mask_second = self.rand_mask(num_main_tokens // 2, num_main_tokens, B, self.device)
+            rand_split_mask_third = torch.logical_not(rand_split_mask_second) * 1
+            second_mask = torch.logical_or(gate_encoded_masks, rand_split_mask_second) * 1
+            third_mask = torch.logical_or(gate_encoded_masks, rand_split_mask_third) * 1
+            rest_mask = torch.cat([second_mask, third_mask], dim=1)
         else:
-            semseg_mask = gate_encoded_masks
-            rest_mask = semseg_mask
+            rest_mask = gate_encoded_masks
         
         # ensure number of encoded rgb tokens less than num_encoded_tokens
         if not masked_rgb_gate_only:
-            num_add_tokens = torch.ones(B, device=self.device) * self.num_encoded_tokens // 2 + torch.sum(rgb_mask, dim=1)
-            num_add_tokens = torch.minimum(num_add_tokens, torch.ones_like(num_add_tokens) * num_rgb_tokens).unsqueeze(-1)
-            addition_masks = self.rand_mask(num_add_tokens, num_rgb_tokens, B, self.device)
-            rgb_mask = torch.logical_or(rgb_mask, addition_masks) * 1      
+            num_add_tokens = torch.ones(B, device=self.device) * self.num_encoded_tokens // 2 + torch.sum(main_mask, dim=1)
+            num_add_tokens = torch.minimum(num_add_tokens, torch.ones_like(num_add_tokens) * num_main_tokens).unsqueeze(-1)
+            addition_masks = self.rand_mask(num_add_tokens, num_main_tokens, B, self.device)
+            main_mask = torch.logical_or(main_mask, addition_masks) * 1      
         
         # randomly sample masks for other domains        
-        num_encoded_tokens = torch.ones(B, device=self.device) * self.num_encoded_tokens - (rgb_mask == 0).sum(dim=1)
+        num_encoded_tokens = torch.ones(B, device=self.device) * self.num_encoded_tokens - (main_mask == 0).sum(dim=1)
         num_encoded_tokens = torch.maximum(num_encoded_tokens, torch.zeros_like(num_encoded_tokens)).unsqueeze(-1)
         num_all_tokens = sum([v.shape[1] for k, v in self.input_tokens.items() if k != "rgb"])
         rand_masks = self.rand_mask(num_encoded_tokens, num_all_tokens, batch_size=B, device=self.device)
         
         # concatenate masks and indexing
-        masks = torch.cat([rgb_mask, rest_mask], dim=1)
+        masks = torch.cat([main_mask, rest_mask], dim=1)
         ids_shuffle = torch.argsort(masks, dim=1)
         ids_restore = torch.argsort(ids_shuffle, dim=1)
         ids_keep = ids_shuffle[:, :self.num_encoded_tokens]
 
         # split masks to each domain
         if self.num_tasks > 2:
-            task_masks = {"rgb": rgb_mask, "semseg": semseg_mask, "depth": depth_mask}
-        elif "depth" in self.input_domains:
-            task_masks = {"rgb": rgb_mask, "depth": rest_mask}
+            task_masks = {domain: mask for domain, mask in zip(in_domains, [main_mask, second_mask, third_mask])}
         else:
-            task_masks = {"rgb": rgb_mask, "semseg": rest_mask}
+            task_masks = {domain: mask for domain, mask in zip(in_domains, [main_mask, rest_mask])}
         
         return task_masks, ids_keep, ids_restore
     

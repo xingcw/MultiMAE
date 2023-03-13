@@ -71,7 +71,7 @@ DOMAIN_CONF = {
     },
     'semseg': {
         'num_classes': COCO_SEMSEG_NUM_CLASSES,
-        'stride_level': 4,
+        'stride_level': 1,
         'input_adapter': partial(SemSegInputAdapter, num_classes=COCO_SEMSEG_NUM_CLASSES,
                                  dim_class_emb=64, interpolate_class_emb=False),
         'output_adapter': partial(SpatialOutputAdapter, num_channels=COCO_SEMSEG_NUM_CLASSES),
@@ -154,9 +154,11 @@ def main(args):
     if not args.show_user_warnings:
         warnings.filterwarnings("ignore", category=UserWarning)
 
+    # reconfigure args
     args.in_domains = args.in_domains.split('-')
     args.out_domains = args.out_domains.split('-')
     args.all_domains = list(set(args.in_domains) | set(args.out_domains))
+    DOMAIN_CONF['semseg']['stride_level'] = args.semseg_stride_level
 
     model = get_model(args)
 
@@ -349,11 +351,8 @@ def train_one_epoch(model: torch.nn.Module, data_loader: Iterable, tasks_loss_fn
     if loss_on_unmasked:
         task_loss_types = {}
         tasks_loss_unmask = loss_on_unmasked.split('-')
-        for task in tasks_loss_fn.keys():
-            if task in tasks_loss_unmask:
-                task_loss_types[task] = 'unmask'
-            else:
-                task_loss_types[task] = 'mask'
+        for task in tasks_loss_fn:
+            task_loss_types[task] = 'unmask' if task in tasks_loss_unmask else 'mask'
     else:
         task_loss_types = {task: 'mask' for task in tasks_loss_fn.keys()}
         
@@ -397,7 +396,10 @@ def train_one_epoch(model: torch.nn.Module, data_loader: Iterable, tasks_loss_fn
                 sample_tasks_uniformly=sample_tasks_uniformly,
                 fp32_output_adapters=fp32_output_adapters,
                 mask_type=mask_type,
-                masked_rgb_gate_only=masked_rgb_gate_only
+                masked_rgb_gate_only=masked_rgb_gate_only,
+                semseg_gt=tasks_dict["semseg"],
+                in_domains=in_domains,
+                semseg_stride=args.semseg_stride_level
             )
 
             if extra_norm_pix_loss:
@@ -536,7 +538,10 @@ def validate(model: torch.nn.Module, data_loader: Iterable, tasks_loss_fn: Dict[
             sample_tasks_uniformly=sample_tasks_uniformly,
             fp32_output_adapters=fp32_output_adapters,
             mask_type=mask_type,
-            masked_rgb_gate_only=masked_rgb_gate_only
+            masked_rgb_gate_only=masked_rgb_gate_only,
+            semseg_gt=tasks_dict["semseg"],
+            in_domains=in_domains,
+            semseg_stride=args.semseg_stride_level
         )
 
         if extra_norm_pix_loss:
@@ -576,7 +581,8 @@ def validate(model: torch.nn.Module, data_loader: Iterable, tasks_loss_fn: Dict[
     eval_metrics = {"val/" + k: meter.global_avg for k, meter in metric_logger.meters.items()}
     
     if log_images and utils.is_main_process():
-        log_multimae_semseg_wandb(log_inputs, log_preds, log_masks, prefix='plots/val', metadata=metadata)
+        log_multimae_semseg_wandb(log_inputs, log_preds, log_masks, prefix='plots/val', 
+                                  metadata=metadata, semseg_stride=args.semseg_stride_level)
 
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
