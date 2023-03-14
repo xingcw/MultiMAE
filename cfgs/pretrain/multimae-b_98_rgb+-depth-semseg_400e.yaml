@@ -1,8 +1,8 @@
 # Input and output tasks
-in_domains: depth-semseg
-out_domains: rgb-depth-semseg
+in_domains: rgb-semseg
+out_domains: rgb-semseg
 standardize_depth: True
-extra_norm_pix_loss: False
+extra_norm_pix_loss: True
 
 # Architecture
 model: pretrain_multimae_base
@@ -10,7 +10,7 @@ pretrained: False
 decoder_dim: 256
 input_size: 224
 patch_size: 16
-semseg_stride_level: 1
+semseg_stride_level: 4
 mask_type: gate-oriented
 masked_rgb_gate_only: False
 alphas: 1.0  # Dirichlet concentration parameter

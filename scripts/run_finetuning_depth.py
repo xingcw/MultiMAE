@@ -358,7 +358,7 @@ def main(args):
     dataset_val = build_regression_dataset(args, data_path=args.eval_data_path, transform=val_transform, max_images=args.max_val_images)
     dataset_test = None
 
-    if True:  # args.distributed:
+    if args.distributed:
         num_tasks = utils.get_world_size()
         global_rank = utils.get_rank()
         sampler_train = torch.utils.data.DistributedSampler(
