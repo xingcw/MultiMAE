@@ -354,7 +354,8 @@ class MultiMAE(nn.Module):
         encoder_tokens = self.encoder(input_tokens)
 
         ## Output decoders
-        if self.output_adapters is None:
+        return_embeddings = kwargs.get('return_embeddings', False)
+        if self.output_adapters is None or return_embeddings:
             return encoder_tokens, task_masks
 
         # Decode tokens for each task using task-specific output adapters

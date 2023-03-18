@@ -48,10 +48,10 @@ from multimae.utils.datasets import build_multimae_pretraining_dataset
 from multimae.utils.optim_factory import create_optimizer
 from multimae.parsers.pretrain_multimae import get_args
 from multimae.utils.log_images import log_multimae_semseg_wandb
+from multimae.utils.plot_utils import get_semseg_metadata
 from multimae.utils.task_balancing import (NoWeightingStrategy,
                                   UncertaintyWeightingStrategy)
 from pipelines.utils.log_utils import get_logger
-from pipelines.utils.data_utils import get_semseg_metadata
 
 
 DOMAIN_CONF = {
@@ -121,7 +121,6 @@ def get_model(args):
             context_tasks=list(args.in_domains),
             use_xattn=args.decoder_use_xattn
         )
-    print(utils.registry.list_models())
     
     model = create_model(
         args.model,

@@ -1,22 +1,64 @@
-# To supress DPT and Mask2Former warnings
-import warnings
-warnings.filterwarnings("ignore")
-
+import os
 import numpy as np
 from PIL import Image
+from pathlib import Path
+import matplotlib.pyplot as plt
+from mpl_toolkits.axes_grid1 import ImageGrid
 
 import torch
 import torch.nn.functional as F
 import torchvision.transforms.functional as TF
 from einops import rearrange
 
-import matplotlib.pyplot as plt
-from mpl_toolkits.axes_grid1 import ImageGrid
-
 # Mask2Former and detectron2 dependencies for semantic segmentation pseudo labeling
 from detectron2.utils.visualizer import ColorMode, Visualizer
-from detectron2.data import MetadataCatalog
+from detectron2.data import DatasetCatalog, MetadataCatalog
 from multimae.utils.data_constants import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
+from pipelines.utils.constants import UNITY_RGB_COLORS, UNITY_COARSE_SEM_LABELS
+
+import warnings
+warnings.filterwarnings("ignore")
+
+
+def get_semseg_metadata(dataset_folder):
+    """Get the metadata for detectron semantic segmentation plotting.
+    """
+    
+    def load_semantic():
+        rgb_folder = Path(dataset_folder) / "rgb"
+        semseg_folder = Path(dataset_folder) / "semseg"
+        
+        height, width = None, None
+        
+        results = []
+
+        for img_path in sorted(os.listdir(rgb_folder)):
+            
+            img_file = rgb_folder / img_path
+            semseg_file = semseg_folder / img_path
+            
+            if height is None:
+                img = Image.open(str(img_file))
+                width,height = img.size
+
+            results.append({
+                "file_name": str(img_file),
+                "sem_seg_file_name": str(semseg_file),
+                "height": height,
+                "width": width
+                }
+            )
+        return results
+    
+    dataset_name = "multimae"
+    cat2id = [UNITY_COARSE_SEM_LABELS[k] for k in sorted(UNITY_COARSE_SEM_LABELS.keys())]
+    colors = UNITY_RGB_COLORS[:len(cat2id)]
+    DatasetCatalog.register(dataset_name, load_semantic)
+    metadata = MetadataCatalog.get(dataset_name).set(stuff_classes=cat2id, 
+                                                     stuff_colors=colors,
+                                                     evaluator_type="sem_seg")
+
+    return metadata
 
 
 def get_masked_image(img, mask, image_size=224, patch_size=16, mask_value=0.0):
