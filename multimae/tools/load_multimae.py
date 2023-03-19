@@ -3,7 +3,6 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 
 import torch
-from multimae.utils.plot_utils import plot_predictions
 from multimae.models.criterion import MaskedCrossEntropyLoss, MaskedMSELoss, MaskedL1Loss
 
 from functools import partial
