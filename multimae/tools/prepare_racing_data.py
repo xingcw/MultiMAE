@@ -2,6 +2,7 @@ import os
 import cv2
 import glob
 import shutil
+import socket
 import argparse
 import numpy as np
 from PIL import Image
@@ -105,7 +106,14 @@ if __name__ == "__main__":
     
     flightmare_path = Path(os.environ["FLIGHTMARE_PATH"])
     multimae_path = flightmare_path.parent / "vision_backbones/MultiMAE"
+    dataset_folder = flightmare_path / f"flightpy/datasets"
+    
+    server = socket.gethostname()
+    if server == "snaga":
+        dataset_folder = Path("/data/storage/chunwei/multimae/datasets/raw_data_tracks_all")
+        multimae_path = Path("/data/storage/chunwei/multimae")
+    
+    data_folder = dataset_folder / f"{data_lookup[args.track]}/{args.timestamp}/data/data/epoch_0000"
     target_folder = multimae_path / "datasets/circle"
-    data_folder = flightmare_path / f"flightpy/datasets/{data_lookup[args.track]}/{args.timestamp}/data/data/epoch_0000"
     
     extract_data_from_racing(data_folder, target_folder, args.train_val_split, args.depth_format, args.sample_method)

@@ -1,9 +1,11 @@
 import os
 import yaml
+import socket
 import datetime
 import argparse
 from pathlib import Path
 from multimae.utils.data_constants import IMAGENET_TRAIN_PATH, IMAGENET_VAL_PATH
+from pipelines.utils.constants import SERVERS
 
 
 def get_args():
@@ -182,6 +184,10 @@ def get_args():
     # defaults will have been overridden if config file specified.
     args = parser.parse_args(remaining)
     
+    server = SERVERS[socket.gethostname()]
+    if server == "snaga":
+        multimae_path = Path("/data/storage/chunwei/multimae")
+    
     # add prefix for all paths
     args.data_path = str(multimae_path / args.data_path)
     args.eval_data_path = str(multimae_path / args.eval_data_path)
@@ -192,6 +198,6 @@ def get_args():
     
     # configure wandb log dir
     args.wandb_log_dir = str(multimae_path / args.wandb_log_dir)
-    args.wandb_run_name = args.wandb_run_name + "_" + timestamp
+    args.wandb_run_name = f"{server}_" + args.wandb_run_name + "_" + timestamp
 
     return args

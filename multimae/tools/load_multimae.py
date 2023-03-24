@@ -1,4 +1,5 @@
 import os
+import socket
 from pathlib import Path
 import matplotlib.pyplot as plt
 
@@ -57,6 +58,10 @@ def load_model(model_name):
     multimae_path = flightmare_path.parent / "vision_backbones/MultiMAE"
 
     device = torch.device('cuda')
+    server = socket.gethostname()
+    if server == "snaga":
+        multimae_path = Path("/data/storage/chunwei/multimae")
+        
     pretrained_model_path = multimae_path / f"results/pretrain/{MODELS[model_name]}"
     ckpt = torch.load(pretrained_model_path, map_location='cpu')
     

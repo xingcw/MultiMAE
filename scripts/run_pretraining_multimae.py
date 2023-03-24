@@ -19,6 +19,7 @@ import math
 import os
 import sys
 import time
+import yaml
 import random
 import warnings
 import datetime
@@ -203,6 +204,10 @@ def main(args):
         log_writer = None
 
     print(vars(args))
+    # save args to config file
+    if args.output_dir:
+        with open(os.path.join(args.output_dir, 'config.yaml'), 'w') as f:
+            yaml.safe_dump(vars(args), f, default_flow_style=False)
     
     # configure for detectron dataset (for prediection)
     metadata = get_semseg_metadata(args.eval_data_path)
@@ -545,7 +550,8 @@ def validate(model: torch.nn.Module, data_loader: Iterable, tasks_loss_fn: Dict[
 
         if extra_norm_pix_loss:
             tasks_dict['norm_rgb'] = tasks_dict['rgb']
-            masks['norm_rgb'] = masks.get('rgb', None)
+            full_mask = torch.ones_like(list(masks.values())[0])
+            masks['norm_rgb'] = masks.get('rgb', full_mask)
 
         task_losses = {}
         
