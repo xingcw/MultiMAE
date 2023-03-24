@@ -48,8 +48,11 @@ MODELS = {
         "gate-half-depth-semseg": "03-11-23-14-17/checkpoint-299.pth",
         "no-standard-depth": "03-12-11-46-23/checkpoint-299.pth",
         "only-gate-mask-rgb_unmask-depth-loss": "03-12-18-08-15/checkpoint-299.pth",
-        "depth-semseg": "03-12-23-04-05/checkpoint-299.pth",
-        "fine-semseg": "03-13-11-59-42/checkpoint-299.pth"
+        "depth-semseg": "03-20-17-51-50/checkpoint-999.pth",
+        "fine-semseg": "03-13-11-59-42/checkpoint-299.pth",
+        "depth": "03-23-21-53-07/checkpoint-999.pth",
+        "semseg": "03-23-09-07-13/checkpoint-999.pth",
+        "rgb-depth": "03-23-01-05-28/checkpoint-999.pth",
 }
 
 def load_model(model_name):
