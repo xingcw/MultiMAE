@@ -8,9 +8,9 @@ from multimae.utils.data_constants import IMAGENET_TRAIN_PATH, IMAGENET_VAL_PATH
 from pipelines.utils.constants import SERVERS
 
 
-def get_args():
+def get_args(no_command_line_args=False):
     config_parser = parser = argparse.ArgumentParser(description='Training Config', add_help=False)
-    config_parser.add_argument('-c', '--config', default='cfgs/pretrain/multimae-b_98_rgb+-depth-semseg_400e.yaml', 
+    config_parser.add_argument('-c', '--config', default='cfgs/pretrain/multimae_custom.yaml', 
                                type=str, metavar='FILE', help='YAML config file specifying default arguments')
 
     parser = argparse.ArgumentParser('MultiMAE pre-training script', add_help=False)
@@ -182,6 +182,7 @@ def get_args():
 
     # The main arg parser parses the rest of the args, the usual
     # defaults will have been overridden if config file specified.
+    remaining = [] if no_command_line_args else remaining
     args = parser.parse_args(remaining)
     
     server = SERVERS[socket.gethostname()]

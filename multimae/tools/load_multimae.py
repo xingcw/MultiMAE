@@ -1,7 +1,7 @@
 import os
+import yaml
 import socket
 from pathlib import Path
-import matplotlib.pyplot as plt
 
 import torch
 from multimae.models.criterion import MaskedCrossEntropyLoss, MaskedMSELoss, MaskedL1Loss
@@ -11,6 +11,7 @@ from multimae.models.input_adapters import PatchedInputAdapter, SemSegInputAdapt
 from multimae.models.output_adapters import SpatialOutputAdapter
 from multimae.utils.model_builder import create_model
 from multimae.utils.train_utils import normalize_depth
+from multimae.parsers.pretrain_multimae import get_args
 
 import warnings
 warnings.filterwarnings('ignore')
@@ -66,11 +67,36 @@ def load_model(model_name):
     if server == "snaga":
         multimae_path = Path("/data/storage/chunwei/multimae")
         
-    pretrained_model_path = multimae_path / f"results/pretrain/{MODELS[model_name]}"
-    ckpt = torch.load(pretrained_model_path, map_location='cpu')
+    if model_name == "pretrained":
+        CKPT_URL = 'https://github.com/EPFL-VILAB/MultiMAE/releases/download/pretrained-weights/multimae-b_98_rgb+-depth-semseg_1600e_multivit-afff3f8c.pth'
+        ckpt = torch.hub.load_state_dict_from_url(CKPT_URL, map_location='cpu')
+        # load args from argparser
+        args = get_args(no_command_line_args=True)
+        # load default configs from checkpoint config file
+        pretrained_config_path = multimae_path / "cfgs/pretrain/multimae-b_98_rgb+-depth-semseg_1600e.yaml"
+        with open(pretrained_config_path, 'r') as f:
+            pretrained_config = yaml.safe_load(f)
+            f.close()
+        # update args with pretrained config
+        for k, v in pretrained_config.items():
+            setattr(args, k, v)
+        # reconfigure args
+        args.in_domains = args.in_domains.split('-')
+        args.out_domains = args.out_domains.split('-')
+        args.all_domains = list(set(args.in_domains) | set(args.out_domains))
+        print("Loaded pretrained model from: ", CKPT_URL)
+        print(vars(args))
+            
+    elif model_name in MODELS:
+        pretrained_model_path = multimae_path / f"results/pretrain/{MODELS[model_name]}"
+        ckpt = torch.load(pretrained_model_path, map_location='cpu')
+        args = ckpt["args"]
+        print("Model loaded from: ", pretrained_model_path)
+    else:
+        raise KeyError(f"Model name {model_name} not found.")
     
-    args = ckpt["args"]
     args.semseg_stride_level = 4
+    DOMAIN_CONF['semseg']['stride_level'] = args.semseg_stride_level
 
     input_adapters = {
         domain: DOMAIN_CONF[domain]['input_adapter'](
@@ -119,7 +145,6 @@ def load_model(model_name):
     ) 
     
     model.load_state_dict(ckpt['model'], strict=True)   
-    print("Model loaded from: ", pretrained_model_path)
     model.to(device)
     model.eval()
     
