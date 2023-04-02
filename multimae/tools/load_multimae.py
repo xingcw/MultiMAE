@@ -61,7 +61,8 @@ def load_model(model_name):
     
     flightmare_path = Path(os.environ["FLIGHTMARE_PATH"])
     multimae_path = flightmare_path.parent / "vision_backbones/MultiMAE"
-
+    cfgs_path = multimae_path / "cfgs"
+    
     device = torch.device('cuda')
     server = socket.gethostname()
     if server == "snaga":
@@ -73,7 +74,7 @@ def load_model(model_name):
         # load args from argparser
         args = get_args(no_command_line_args=True)
         # load default configs from checkpoint config file
-        pretrained_config_path = multimae_path / "cfgs/pretrain/multimae-b_98_rgb+-depth-semseg_1600e.yaml"
+        pretrained_config_path = cfgs_path / "pretrain/multimae-b_98_rgb+-depth-semseg_1600e.yaml"
         with open(pretrained_config_path, 'r') as f:
             pretrained_config = yaml.safe_load(f)
             f.close()
