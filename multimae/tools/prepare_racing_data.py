@@ -114,6 +114,6 @@ if __name__ == "__main__":
         multimae_path = Path("/data/storage/chunwei/multimae")
     
     data_folder = dataset_folder / f"{data_lookup[args.track]}/{args.timestamp}/data/data/epoch_0000"
-    target_folder = multimae_path / "datasets/circle"
+    target_folder = multimae_path / "datasets/new_env"
     
     extract_data_from_racing(data_folder, target_folder, args.train_val_split, args.depth_format, args.sample_method)

@@ -55,6 +55,8 @@ MODELS = {
         "semseg": "03-23-09-07-13/checkpoint-999.pth",
         "rgb-depth": "03-23-01-05-28/checkpoint-999.pth",
         "rgb-only": "03-25-20-30-23/checkpoint-999.pth",
+        "rgb-depth-semseg": "03-29-01-56-32/checkpoint-999.pth",
+        "semseg-clean": "04-04-20-02-36/checkpoint-999.pth",
 }
 
 def load_model(model_name):
