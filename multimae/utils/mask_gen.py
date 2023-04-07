@@ -11,7 +11,7 @@ from einops import rearrange
 from itertools import product
 from typing import Dict, List, Union
 from torch.distributions.dirichlet import Dirichlet
-
+from multimae.utils.data_constants import GATE_SEMSEG_CLASS_ID
 
 class MaskGenerator:
     def __init__(self, 
@@ -151,7 +151,7 @@ class MaskGenerator:
         # masks on gate for RGB/depth images
         semseg = semseg_gt.detach().clone()
         fine_masks = torch.zeros_like(semseg, device=self.device)
-        fine_masks[semseg == 3] = 1              # 3 -> "gate"
+        fine_masks[semseg == GATE_SEMSEG_CLASS_ID] = 1             
         fine_masks = rearrange(fine_masks, "B (nh h) (nw w) -> B (nh nw) (h w)", B=B, nh=nh, nw=nw)
         main_mask = (torch.sum(fine_masks, dim=2) > 0) * 1
         num_main_tokens = fine_masks.shape[1]

@@ -45,3 +45,5 @@ NYU_TRAIN_PATH = '/home/chunwei/Documents/drone_offboard/vision_backbones/MultiM
 NYU_TEST_PATH = '/home/chunwei/Documents/drone_offboard/vision_backbones/MultiMAE/datasets/nyu/test'
 
 TASKONOMY_PATH = 'ADD_DATA_PATH_HERE'
+
+GATE_SEMSEG_CLASS_ID = 1

@@ -5,12 +5,13 @@ import shutil
 import socket
 import argparse
 import numpy as np
+from tqdm import tqdm
 from PIL import Image
 from pathlib import Path
 from pipelines.utils.constants import DEPTH_MAP_SCALE
 
 
-def extract_data_from_racing(data_folder, target_folder, train_val_split=0.8, depth_format="png", sample_method="seq"):
+def extract_data_from_racing(data_folder, target_folder, num_shift=0, train_val_split=0.8, depth_format="png", sample_method="seq"):
     """Extracts data from the racing dataset and saves it in the desired format.
 
     Args:
@@ -21,7 +22,6 @@ def extract_data_from_racing(data_folder, target_folder, train_val_split=0.8, de
         sample_method (str, optional): method to sample the data. Defaults to "seq". options: ["seq", "random"]
     """
     total_num_imgs = 0
-    num_shift = 24000
     
     if sample_method == "random":
         probs = np.random.uniform(0, 1, 2**16)
@@ -39,7 +39,7 @@ def extract_data_from_racing(data_folder, target_folder, train_val_split=0.8, de
     os.makedirs(target_folder / "val/depth/data", exist_ok=True)
     os.makedirs(target_folder / "val/semseg/data", exist_ok=True)
 
-    for env_folder in sorted(os.listdir(data_folder)):
+    for env_folder in tqdm(sorted(os.listdir(data_folder))):
         for trial_folder in sorted(os.listdir(data_folder / env_folder)):
             sample_folder = data_folder / env_folder / trial_folder
             for file in sorted(glob.glob(str(sample_folder / "*.npz"))):
@@ -93,8 +93,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--track", "-t", type=str, default="splits", help="which track is the data from")
     parser.add_argument("--depth_format", "-d", type=str, default="png", help="desired depth image format")
-    parser.add_argument("--sample_method", "-s", type=str, default="seq", help="method to sample the data")
+    parser.add_argument("--sample_method", "-s", type=str, default="random", help="method to sample the data")
     parser.add_argument("--train_val_split", "-tv", type=float, default=0.8, help="fraction of data to use for training")
+    parser.add_argument("--num_shift", "-ns", type=int, default=0, help="number of images to shift the ids")
     parser.add_argument("--timestamp", "-ts", type=str, default=None, help="timestamp of the data")
     args = parser.parse_args()
     
@@ -116,4 +117,11 @@ if __name__ == "__main__":
     data_folder = dataset_folder / f"{data_lookup[args.track]}/{args.timestamp}/data/data/epoch_0000"
     target_folder = multimae_path / "datasets/new_env"
     
-    extract_data_from_racing(data_folder, target_folder, args.train_val_split, args.depth_format, args.sample_method)
+    extract_data_from_racing(
+        data_folder=data_folder,
+        target_folder=target_folder,
+        num_shift=args.num_shift,
+        train_val_split=args.train_val_split,
+        depth_format=args.depth_format,
+        sample_method=args.sample_method
+    )
