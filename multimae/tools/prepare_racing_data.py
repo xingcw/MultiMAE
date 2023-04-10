@@ -8,10 +8,12 @@ import numpy as np
 from tqdm import tqdm
 from PIL import Image
 from pathlib import Path
+from multimae.utils.data_constants import GATE_SEMSEG_CLASS_ID
 from pipelines.utils.constants import DEPTH_MAP_SCALE
+from pipelines.utils.label_utils.semseg_from_corners import draw_polygon
 
 
-def extract_data_from_racing(data_folder, target_folder, num_shift=0, train_val_split=0.8, depth_format="png", sample_method="seq"):
+def extract_data_from_racing(data_folder, target_folder, num_shift=0, train_val_split=0.8, depth_format="png", sample_method="seq", gate_corners=None):
     """Extracts data from the racing dataset and saves it in the desired format.
 
     Args:
@@ -20,6 +22,7 @@ def extract_data_from_racing(data_folder, target_folder, num_shift=0, train_val_
         train_val_split (float, optional): fraction of data to use for training. Defaults to 0.8.
         depth_format (str, optional): desired depth image format. Defaults to "png". options: ["png", "tiff"]
         sample_method (str, optional): method to sample the data. Defaults to "seq". options: ["seq", "random"]
+        gate_corners (np.array, optional): array containing the corners of the gate in each image. Defaults to None.
     """
     total_num_imgs = 0
     
@@ -38,8 +41,13 @@ def extract_data_from_racing(data_folder, target_folder, num_shift=0, train_val_
     os.makedirs(target_folder / "val/rgb/data", exist_ok=True)
     os.makedirs(target_folder / "val/depth/data", exist_ok=True)
     os.makedirs(target_folder / "val/semseg/data", exist_ok=True)
-
-    for env_folder in tqdm(sorted(os.listdir(data_folder))):
+    
+    if gate_corners is not None:
+        os.makedirs(target_folder / "train/fake_semseg/data", exist_ok=True)
+        os.makedirs(target_folder / "val/fake_semseg/data", exist_ok=True)
+        
+    for env_id, env_folder in tqdm(enumerate(sorted(os.listdir(data_folder)))):
+        current_step_id = 0
         for trial_folder in sorted(os.listdir(data_folder / env_folder)):
             sample_folder = data_folder / env_folder / trial_folder
             for file in sorted(glob.glob(str(sample_folder / "*.npz"))):
@@ -51,6 +59,8 @@ def extract_data_from_racing(data_folder, target_folder, num_shift=0, train_val_
                     
                 old_file_name = Path(file).stem.strip()
                 save_id = total_num_imgs + num_shift
+                current_step_id += 1
+                
                 # copy rgb image
                 rgb_path = sample_folder / f"{old_file_name}_rgb.png"
                 new_rgb_path = target_folder / f"{split}/rgb/data/{save_id:06d}.png"
@@ -82,6 +92,21 @@ def extract_data_from_racing(data_folder, target_folder, num_shift=0, train_val_
                     raise KeyError(f"Depth format {depth_format} not supported.")
                     
                 print(f"Copying {old_file_name} to {new_depth_path}")
+                
+                if gate_corners is not None:
+                    # generate fake semseg image from corners
+                    gate_corner = gate_corners[current_step_id, env_id, :, :, :]
+                    h, w = Image.open(rgb_path).size
+                    img = Image.fromarray(np.zeros((h, w, 3), dtype=np.uint8))
+
+                    for i in range(gate_corner.shape[0]):
+                        corners = gate_corner[i].flatten().reshape(4, 2, order='F')
+                        img = draw_polygon(corners, 4, img=img, fill_value=GATE_SEMSEG_CLASS_ID)
+                        
+                    img_save_path = target_folder / f"{split}/fake_semseg/data/{save_id:06d}.png"
+                    img.save(img_save_path, 'PNG')
+                    
+                    print(f"Generate fake semseg image and saved to {img_save_path}")
                 
                 total_num_imgs += 1
                 
