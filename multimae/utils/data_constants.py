@@ -23,9 +23,9 @@ CIFAR_DEFAULT_STD = (0.2023, 0.1994, 0.2010)
 SEG_IGNORE_INDEX = 255
 PAD_MASK_VALUE = 254
 COCO_SEMSEG_NUM_CLASSES = 133
-CUSTOM_SEMSEG_NUM_CLASSES = 4
+CUSTOM_SEMSEG_NUM_CLASSES = 2
 
-IMAGE_TASKS = ['rgb', 'depth', 'semseg', 'semseg_coco']
+IMAGE_TASKS = ['rgb', 'depth', 'semseg', 'semseg_coco', 'semseg_gt']
 
 NYU_MEAN = 2070.7764
 NYU_STD = 777.5723

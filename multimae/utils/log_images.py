@@ -4,16 +4,18 @@
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 
+import wandb
+import matplotlib
+matplotlib.use('agg')
+import numpy as np
 from typing import Dict, List
 
-import numpy as np
 import torch
 import torch.nn.functional as F
 import torchvision.transforms as transforms
-import wandb
 
 import multimae.utils as utils
-from pipelines.utils.constants import UNITY_COARSE_SEM_LABELS, IMG_HEIGHT, IMG_WIDTH
+from pipelines.utils.constants import UNITY_COARSE_SEM_LABELS, IMG_HEIGHT, IMG_WIDTH, UNITY_GATE_ONLY_SEM_LABELS
 from multimae.utils.data_constants import CUSTOM_SEMSEG_NUM_CLASSES
 from multimae.utils.datasets_semseg import (ade_classes, hypersim_classes, nyu_v2_40_classes)
 from multimae.utils.plot_utils import plot_predictions
@@ -31,6 +33,7 @@ def inv_norm(tensor: torch.Tensor) -> torch.Tensor:
 @torch.no_grad()
 def log_multimae_semseg_wandb(
     inputs: Dict[str, torch.Tensor],
+    gts: Dict[str, torch.Tensor],
     preds: Dict[str, torch.Tensor],
     masks: Dict[str, torch.Tensor],
     image_count=3,
@@ -39,24 +42,25 @@ def log_multimae_semseg_wandb(
     semseg_stride: int = 4
 ):
     log_images = {}
-    class_labels = UNITY_COARSE_SEM_LABELS  
+    class_labels = UNITY_GATE_ONLY_SEM_LABELS  
     common_domains = list(set(inputs.keys()).intersection(set(preds.keys())))
     
     if len(common_domains) > 0:
         image_count = min(len(inputs[common_domains[0]]), image_count)
         for i in range(image_count):
             common_inputs = {k: inputs[k][i].unsqueeze(0) for k in common_domains}
+            common_gts = {k: gts[k][i].unsqueeze(0) for k in common_domains}
             common_preds = {k: preds[k][i].unsqueeze(0) for k in common_domains}
             common_masks = {k: masks[k][i].unsqueeze(0) if k in masks else torch.ones_like(list(masks.values())[0][i].unsqueeze(0))
                             for k in common_domains}
             unify_plot = plot_predictions(common_inputs, common_preds, common_masks, semseg_stride=semseg_stride,
-                                          show_img=False, metadata=metadata, return_fig=True)
+                                          show_img=False, metadata=metadata, return_fig=True, gts=common_gts)
             log_images[f"{prefix}_compare_{i}"] = wandb.Image(unify_plot)
     
-    rgb_imgs = inputs["rgb"] if "rgb" in common_domains else None
+    rgb_imgs = gts["rgb"] if "rgb" in common_domains else None
     image_count = min(len(rgb_imgs), image_count)
-    depth_gts = inputs["depth"] if "depth" in common_domains else None
-    semseg_gts = inputs["semseg"] if "semseg" in common_domains else []
+    depth_gts = gts["depth"] if "depth" in common_domains else None
+    semseg_gts = gts["semseg"] if "semseg" in common_domains else []
     semseg_preds = preds["semseg"] if "semseg" in common_domains else []
     
     rgb_imgs = rgb_imgs[:image_count]

@@ -153,7 +153,20 @@ def plot_semseg_pred_masked(rgb, semseg_preds, semseg_gt, mask, ax=None, image_s
         return visualizer.get_output().get_image()
     
 
-def plot_predictions(input_dict, preds, masks, image_size=224, semseg_stride=4, show_img=True, metadata=None, return_fig=False):
+def plot_predictions(
+        input_dict, 
+        preds, 
+        masks, 
+        image_size=224, 
+        semseg_stride=4,
+        show_img=True, 
+        metadata=None, 
+        return_fig=False, 
+        gts=None
+    ):
+    
+    """Plots the predictions of the model with ground truth and masks.
+    """
 
     masked_rgb = get_masked_image(
         denormalize(input_dict['rgb']), 
@@ -172,6 +185,9 @@ def plot_predictions(input_dict, preds, masks, image_size=224, semseg_stride=4, 
     pred_rgb = denormalize(preds['rgb'])[0].permute(1,2,0).clamp(0,1)
     use_depth = "depth" in input_dict
     use_semseg = "semseg" in input_dict
+    
+    # check if semseg ground truth is different with the input semseg
+    gts = input_dict if gts is None else gts
     
     if use_depth:
         pred_depth = preds['depth'][0,0].detach().cpu()
@@ -197,7 +213,7 @@ def plot_predictions(input_dict, preds, masks, image_size=224, semseg_stride=4, 
 
         grid[0].imshow(masked_rgb)
         grid[1].imshow(pred_rgb2)
-        grid[2].imshow(denormalize(input_dict['rgb'])[0].permute(1,2,0).detach().cpu())
+        grid[2].imshow(denormalize(gts['rgb'])[0].permute(1,2,0).detach().cpu())
         
         fontsize = 16
         grid[0].set_title('Masked inputs', fontsize=fontsize)
@@ -208,16 +224,16 @@ def plot_predictions(input_dict, preds, masks, image_size=224, semseg_stride=4, 
         if use_depth:
             grid[3].imshow(masked_depth)
             grid[4].imshow(pred_depth2)
-            grid[5].imshow(input_dict['depth'][0,0].detach().cpu())
+            grid[5].imshow(gts['depth'][0,0].detach().cpu())
             grid[3].set_ylabel('Depth', fontsize=fontsize)
         
         if use_semseg:
             start_idx = 6 if use_depth else 3
             plot_semseg_gt_masked(input_dict, masks['semseg'], grid[start_idx], mask_value=1.0, 
                                   image_size=image_size, metadata=metadata)
-            plot_semseg_pred_masked(input_dict['rgb'], preds['semseg'], input_dict['semseg'], masks['semseg'], grid[start_idx+1], 
+            plot_semseg_pred_masked(input_dict['rgb'], preds['semseg'], gts['semseg'], masks['semseg'], grid[start_idx+1], 
                                     image_size=image_size, metadata=metadata, semseg_stride=semseg_stride)
-            plot_semseg_gt(input_dict, grid[start_idx+2], image_size=image_size, metadata=metadata)
+            plot_semseg_gt(gts, grid[start_idx+2], image_size=image_size, metadata=metadata)
             grid[start_idx].set_ylabel('Semantic', fontsize=fontsize)
 
         for ax in grid:
@@ -231,11 +247,11 @@ def plot_predictions(input_dict, preds, masks, image_size=224, semseg_stride=4, 
     return {
         'rgb_input': masked_rgb,
         'rgb_pred': pred_rgb2,
-        'rgb_gt': denormalize(input_dict['rgb'])[0].permute(1,2,0).detach().cpu(),
+        'rgb_gt': denormalize(gts['rgb'])[0].permute(1,2,0).detach().cpu(),
         'depth_input': masked_depth if use_depth else None,
         'depth_pred': pred_depth2 if use_depth else None,
-        'depth_gt': input_dict['depth'][0,0].detach().cpu() if use_depth else None,
+        'depth_gt': gts['depth'][0,0].detach().cpu() if use_depth else None,
         'semseg_input': plot_semseg_gt_masked(input_dict, masks['semseg'], mask_value=1.0, metadata=metadata) if use_semseg else None,
-        'semseg_pred': plot_semseg_pred_masked(input_dict['rgb'], preds['semseg'], input_dict['semseg'], masks['semseg'], metadata=metadata) if use_semseg else None,
-        'semseg_gt': plot_semseg_gt(input_dict, metadata=metadata) if use_semseg else None
+        'semseg_pred': plot_semseg_pred_masked(input_dict['rgb'], preds['semseg'], gts['semseg'], masks['semseg'], metadata=metadata) if use_semseg else None,
+        'semseg_gt': plot_semseg_gt(gts, metadata=metadata) if use_semseg else None
     }

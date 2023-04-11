@@ -158,6 +158,7 @@ def main(args):
     args.in_domains = args.in_domains.split('-')
     args.out_domains = args.out_domains.split('-')
     args.all_domains = list(set(args.in_domains) | set(args.out_domains))
+    args.all_domains += ["semseg_gt"] if args.use_fake_semseg else []
     DOMAIN_CONF['semseg']['stride_level'] = args.semseg_stride_level
 
     model = get_model(args)
@@ -351,6 +352,7 @@ def train_one_epoch(model: torch.nn.Module, data_loader: Iterable, tasks_loss_fn
     fp32_output_adapters=args.fp32_output_adapters.split('-')
     mask_type=args.mask_type
     masked_rgb_gate_only=args.masked_rgb_gate_only
+    use_fake_semseg = args.use_fake_semseg
     
     if loss_on_unmasked:
         task_loss_types = {}
@@ -401,7 +403,7 @@ def train_one_epoch(model: torch.nn.Module, data_loader: Iterable, tasks_loss_fn
                 fp32_output_adapters=fp32_output_adapters,
                 mask_type=mask_type,
                 masked_rgb_gate_only=masked_rgb_gate_only,
-                semseg_gt=tasks_dict["semseg"],
+                semseg_gt=tasks_dict["semseg_gt"] if use_fake_semseg else tasks_dict["semseg"],
                 in_domains=in_domains,
                 semseg_stride=args.semseg_stride_level
             )
@@ -409,11 +411,14 @@ def train_one_epoch(model: torch.nn.Module, data_loader: Iterable, tasks_loss_fn
             if extra_norm_pix_loss:
                 tasks_dict['norm_rgb'] = tasks_dict['rgb']
                 masks['norm_rgb'] = masks.get('rgb', None)
-
+            
             task_losses = {}
     
             for task in preds:
                 target = tasks_dict[task]
+                if task == 'semseg' and use_fake_semseg:
+                    target = tasks_dict["semseg_gt"]
+                    
                 unmask_loss = task_loss_types[task] == 'unmask'
                 if unmask_loss:
                     task_losses[task] = tasks_loss_fn[task](preds[task].float(), target)
@@ -499,6 +504,7 @@ def validate(model: torch.nn.Module, data_loader: Iterable, tasks_loss_fn: Dict[
     mask_type=args.mask_type
     log_images=args.wandb_log_img
     masked_rgb_gate_only=args.masked_rgb_gate_only
+    use_fake_semseg=args.use_fake_semseg
     
     if loss_on_unmasked:
         task_loss_types = {}
@@ -512,7 +518,7 @@ def validate(model: torch.nn.Module, data_loader: Iterable, tasks_loss_fn: Dict[
         task_loss_types = {task: 'mask' for task in tasks_loss_fn.keys()}
     
     if log_images:
-        log_inputs, log_preds,log_masks = None, None, None
+        log_inputs, log_gts, log_preds, log_masks = None, None, None, None
         
     model.eval()
     metric_logger = utils.MetricLogger(delimiter="  ")
@@ -543,7 +549,7 @@ def validate(model: torch.nn.Module, data_loader: Iterable, tasks_loss_fn: Dict[
             fp32_output_adapters=fp32_output_adapters,
             mask_type=mask_type,
             masked_rgb_gate_only=masked_rgb_gate_only,
-            semseg_gt=tasks_dict["semseg"],
+            semseg_gt=tasks_dict["semseg_gt"] if use_fake_semseg else tasks_dict["semseg"],
             in_domains=in_domains,
             semseg_stride=args.semseg_stride_level
         )
@@ -554,9 +560,15 @@ def validate(model: torch.nn.Module, data_loader: Iterable, tasks_loss_fn: Dict[
             masks['norm_rgb'] = masks.get('rgb', full_mask)
 
         task_losses = {}
+        task_gts = {}
         
         for task in preds:
             target = tasks_dict[task]
+            if task == 'semseg' and use_fake_semseg:
+                target = tasks_dict["semseg_gt"]
+            
+            task_gts.update({task: target})
+            
             unmask_loss = task_loss_types[task] == 'unmask'
                 
             if unmask_loss:
@@ -581,12 +593,12 @@ def validate(model: torch.nn.Module, data_loader: Iterable, tasks_loss_fn: Dict[
         metric_logger.update(**weighted_task_loss_values)
         
         if log_images and log_inputs is None:
-            log_inputs, log_preds, log_masks = tasks_dict, preds, masks
+            log_inputs, log_gts, log_preds, log_masks = tasks_dict, task_gts, preds, masks
         
     eval_metrics = {"val/" + k: meter.global_avg for k, meter in metric_logger.meters.items()}
     
     if log_images and utils.is_main_process():
-        log_multimae_semseg_wandb(log_inputs, log_preds, log_masks, prefix='plots/val', 
+        log_multimae_semseg_wandb(log_inputs, log_gts, log_preds, log_masks, prefix='plots/val', 
                                   metadata=metadata, semseg_stride=args.semseg_stride_level)
 
     # gather the stats from all processes

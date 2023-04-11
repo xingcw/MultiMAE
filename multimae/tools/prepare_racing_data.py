@@ -13,7 +13,15 @@ from pipelines.utils.constants import DEPTH_MAP_SCALE
 from pipelines.utils.label_utils.semseg_from_corners import draw_polygon
 
 
-def extract_data_from_racing(data_folder, target_folder, num_shift=0, train_val_split=0.8, depth_format="png", sample_method="seq", gate_corners=None):
+def extract_data_from_racing(
+        data_folder, 
+        target_folder, 
+        num_shift=0, 
+        train_val_split=0.8, 
+        depth_format="png", 
+        sample_method="seq", 
+        gate_corners=None
+    ):
     """Extracts data from the racing dataset and saves it in the desired format.
 
     Args:
@@ -42,9 +50,12 @@ def extract_data_from_racing(data_folder, target_folder, num_shift=0, train_val_
     os.makedirs(target_folder / "val/depth/data", exist_ok=True)
     os.makedirs(target_folder / "val/semseg/data", exist_ok=True)
     
+    use_fake_semseg = False
+    
     if gate_corners is not None:
-        os.makedirs(target_folder / "train/fake_semseg/data", exist_ok=True)
-        os.makedirs(target_folder / "val/fake_semseg/data", exist_ok=True)
+        os.makedirs(target_folder / "train/semseg_gt/data", exist_ok=True)
+        os.makedirs(target_folder / "val/semseg_gt/data", exist_ok=True)
+        use_fake_semseg = True
         
     for env_id, env_folder in tqdm(enumerate(sorted(os.listdir(data_folder)))):
         current_step_id = 0
@@ -59,7 +70,6 @@ def extract_data_from_racing(data_folder, target_folder, num_shift=0, train_val_
                     
                 old_file_name = Path(file).stem.strip()
                 save_id = total_num_imgs + num_shift
-                current_step_id += 1
                 
                 # copy rgb image
                 rgb_path = sample_folder / f"{old_file_name}_rgb.png"
@@ -69,7 +79,8 @@ def extract_data_from_racing(data_folder, target_folder, num_shift=0, train_val_
                 
                 # copy semseg image
                 semseg_path = sample_folder / f"{old_file_name}_semseg.png"
-                new_semseg_path = target_folder / f"{split}/semseg/data/{save_id:06d}.png"
+                semseg_folder = "semseg_gt" if use_fake_semseg else "semseg"
+                new_semseg_path = target_folder / f"{split}/{semseg_folder}/data/{save_id:06d}.png"
                 shutil.copy2(semseg_path, new_semseg_path)
                 # print(f"Copying {old_file_name} to {new_semseg_path}")
                 
@@ -96,19 +107,19 @@ def extract_data_from_racing(data_folder, target_folder, num_shift=0, train_val_
                 if gate_corners is not None:
                     # generate fake semseg image from corners
                     gate_corner = gate_corners[current_step_id, env_id, :, :, :]
-                    h, w = Image.open(rgb_path).size
-                    img = Image.fromarray(np.zeros((h, w, 3), dtype=np.uint8))
-
+                    img = Image.new('L', (depth.shape[1], depth.shape[0]), 0)
+                    
                     for i in range(gate_corner.shape[0]):
                         corners = gate_corner[i].flatten().reshape(4, 2, order='F')
                         img = draw_polygon(corners, 4, img=img, fill_value=GATE_SEMSEG_CLASS_ID)
                         
-                    img_save_path = target_folder / f"{split}/fake_semseg/data/{save_id:06d}.png"
+                    img_save_path = target_folder / f"{split}/semseg/data/{save_id:06d}.png"
                     img.save(img_save_path, 'PNG')
                     
                     print(f"Generate fake semseg image and saved to {img_save_path}")
                 
                 total_num_imgs += 1
+                current_step_id += 1
                 
     print(f"Total number of images: {total_num_imgs}")
     
@@ -139,8 +150,17 @@ if __name__ == "__main__":
         dataset_folder = Path("/data/storage/chunwei/multimae/datasets/raw_data_tracks_all")
         multimae_path = Path("/data/storage/chunwei/multimae")
     
-    data_folder = dataset_folder / f"{data_lookup[args.track]}/{args.timestamp}/data/data/epoch_0000"
-    target_folder = multimae_path / "datasets/new_env"
+    data_folder = dataset_folder / f"{data_lookup[args.track]}/{args.timestamp}"
+    quad_state_path = data_folder / "quad_states.npy"
+    gate_corners_path = data_folder / "gate_corners.npy"
+
+    if os.path.exists(gate_corners_path):
+        gate_corners = np.load(gate_corners_path)
+    else:
+        gate_corners = None
+        
+    target_folder = multimae_path / "datasets/test_fake_semseg"
+    data_folder = data_folder / "data/data/epoch_0000"
     
     extract_data_from_racing(
         data_folder=data_folder,
@@ -148,5 +168,6 @@ if __name__ == "__main__":
         num_shift=args.num_shift,
         train_val_split=args.train_val_split,
         depth_format=args.depth_format,
-        sample_method=args.sample_method
+        sample_method=args.sample_method,
+        gate_corners=gate_corners
     )

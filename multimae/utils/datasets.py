@@ -101,7 +101,7 @@ class DataAugmentationForMultiMAE(object):
             elif task in ['rgb']:
                 img = TF.to_tensor(task_dict[task])
                 img = TF.normalize(img, mean=self.rgb_mean, std=self.rgb_std)
-            elif task in ['semseg', 'semseg_coco']:
+            elif task in ['semseg', 'semseg_coco', 'semseg_gt']:
                 stride_level = self.semseg_stride_level
                 img = task_dict[task].resize((int(self.input_size / stride_level), int(self.input_size / stride_level)))
                 # Using pil_to_tensor keeps it in uint8, to_tensor converts it to float (rescaled to [0, 1])
