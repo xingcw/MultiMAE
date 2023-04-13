@@ -3,7 +3,7 @@
 
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
-
+import os
 import wandb
 import matplotlib
 matplotlib.use('agg')
@@ -39,7 +39,10 @@ def log_multimae_semseg_wandb(
     image_count=3,
     prefix: str = "",
     metadata = None,
-    semseg_stride: int = 4
+    semseg_stride: int = 4,
+    epoch: int = 0,
+    img_save_dir: str = None,
+    log_writer=None
 ):
     log_images = {}
     class_labels = UNITY_GATE_ONLY_SEM_LABELS  
@@ -55,7 +58,9 @@ def log_multimae_semseg_wandb(
                             for k in common_domains}
             unify_plot = plot_predictions(common_inputs, common_preds, common_masks, semseg_stride=semseg_stride,
                                           show_img=False, metadata=metadata, return_fig=True, gts=common_gts)
-            log_images[f"{prefix}_compare_{i}"] = wandb.Image(unify_plot)
+            img_save_path = os.path.join(img_save_dir, f"val_compare_ep_{epoch}_{i}.png")
+            unify_plot.save(img_save_path)
+            log_images[f"{prefix}_compare_{i}"] = wandb.Image(str(img_save_path))
     
     rgb_imgs = gts["rgb"] if "rgb" in common_domains else None
     image_count = min(len(rgb_imgs), image_count)
@@ -70,33 +75,34 @@ def log_multimae_semseg_wandb(
     depth_gts = depth_gts.cpu().numpy() if depth_gts is not None else None
     
     # rescale semseg predictions
-    seg_pred_argmax = semseg_preds[:, :CUSTOM_SEMSEG_NUM_CLASSES].argmax(dim=1)
-    image_size = (IMG_WIDTH, IMG_HEIGHT)
-    semseg_preds = F.interpolate(seg_pred_argmax.unsqueeze(1).float(), size=image_size, mode='nearest').squeeze(1)
-    semseg_gts = F.interpolate(semseg_gts.unsqueeze(1).float(), size=image_size, mode='nearest').squeeze(1)
-    semseg_gts, semseg_preds = semseg_gts.cpu().numpy(), semseg_preds.cpu().numpy()
+    if len(semseg_preds) > 0:
+        seg_pred_argmax = semseg_preds[:, :CUSTOM_SEMSEG_NUM_CLASSES].argmax(dim=1)
+        image_size = (IMG_WIDTH, IMG_HEIGHT)
+        semseg_preds = F.interpolate(seg_pred_argmax.unsqueeze(1).float(), size=image_size, mode='nearest').squeeze(1)
+        semseg_gts = F.interpolate(semseg_gts.unsqueeze(1).float(), size=image_size, mode='nearest').squeeze(1)
+        semseg_gts, semseg_preds = semseg_gts.cpu().numpy(), semseg_preds.cpu().numpy()
 
-    for i, (image, pred, gt) in enumerate(zip(rgb_imgs, semseg_preds, semseg_gts)):
-               
-        image = inv_norm(image)
-         
-        semseg_image = wandb.Image(image, masks={
-            "predictions": {
-                "mask_data": pred,
-                "class_labels": class_labels,
-            },
-            "ground_truth": {
-                "mask_data": gt,
-                "class_labels": class_labels,
-            }
-        })
-
-        log_images[f"{prefix}_semseg_{i}"] = semseg_image
-
-        if depth_gts is not None:
-            log_images[f"{prefix}_depth_{i}"] = wandb.Image(depth_gts[i])
+        for i, (image, pred, gt) in enumerate(zip(rgb_imgs, semseg_preds, semseg_gts)):
+                
+            image = inv_norm(image)
             
-    wandb.log(log_images, commit=False)
+            semseg_image = wandb.Image(image, masks={
+                "predictions": {
+                    "mask_data": pred,
+                    "class_labels": class_labels,
+                },
+                "ground_truth": {
+                    "mask_data": gt,
+                    "class_labels": class_labels,
+                }
+            })
+
+            log_images[f"{prefix}_semseg_{i}"] = semseg_image
+
+            if depth_gts is not None:
+                log_images[f"{prefix}_depth_{i}"] = wandb.Image(depth_gts[i])
+    
+    log_writer.update(log_images)
 
 
 @torch.no_grad()

@@ -308,7 +308,6 @@ def main(args):
             device=device,
             epoch=epoch,
             args=args,
-            
             log_writer=log_writer,
             dp_logger=dp_logger
         )
@@ -325,7 +324,8 @@ def main(args):
                 epoch=epoch,
                 metadata=metadata,
                 args=args,
-                dp_logger=dp_logger
+                dp_logger=dp_logger,
+                log_writer=log_writer
             )
             log_stats.update(val_stats)
         
@@ -418,7 +418,7 @@ def train_one_epoch(model: torch.nn.Module, data_loader: Iterable, tasks_loss_fn
                 fp32_output_adapters=fp32_output_adapters,
                 mask_type=mask_type,
                 masked_rgb_gate_only=masked_rgb_gate_only,
-                semseg_gt=tasks_dict["semseg_gt"] if use_fake_semseg else tasks_dict["semseg"],
+                semseg_gt=tasks_dict["semseg_gt"] if use_fake_semseg else (tasks_dict["semseg"] if "semseg" in tasks_dict else None),
                 in_domains=in_domains,
                 semseg_stride=args.semseg_stride_level
             )
@@ -505,7 +505,7 @@ def train_one_epoch(model: torch.nn.Module, data_loader: Iterable, tasks_loss_fn
 
 @torch.no_grad()
 def validate(model: torch.nn.Module, data_loader: Iterable, tasks_loss_fn: Dict[str, torch.nn.Module],
-            loss_balancer: torch.nn.Module, device: torch.device, epoch: int, args, metadata=None, dp_logger=None):
+            loss_balancer: torch.nn.Module, device: torch.device, epoch: int, args, metadata=None, dp_logger=None, log_writer=None):
     
     # assgin parser args to local variables
     num_encoded_tokens=args.num_encoded_tokens
@@ -564,7 +564,7 @@ def validate(model: torch.nn.Module, data_loader: Iterable, tasks_loss_fn: Dict[
             fp32_output_adapters=fp32_output_adapters,
             mask_type=mask_type,
             masked_rgb_gate_only=masked_rgb_gate_only,
-            semseg_gt=tasks_dict["semseg_gt"] if use_fake_semseg else tasks_dict["semseg"],
+            semseg_gt=tasks_dict["semseg_gt"] if use_fake_semseg else (tasks_dict["semseg"] if "semseg" in tasks_dict else None),
             in_domains=in_domains,
             semseg_stride=args.semseg_stride_level
         )
@@ -613,8 +613,11 @@ def validate(model: torch.nn.Module, data_loader: Iterable, tasks_loss_fn: Dict[
     eval_metrics = {"val/" + k: meter.global_avg for k, meter in metric_logger.meters.items()}
     
     if log_images and utils.is_main_process():
+        img_save_dir = os.path.join(args.output_dir, 'plots')
+        os.makedirs(img_save_dir, exist_ok=True)
         log_multimae_semseg_wandb(log_inputs, log_gts, log_preds, log_masks, prefix='plots/val', 
-                                  metadata=metadata, semseg_stride=args.semseg_stride_level)
+                                  metadata=metadata, semseg_stride=args.semseg_stride_level, 
+                                  img_save_dir=img_save_dir, epoch=epoch, log_writer=log_writer)
 
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
