@@ -21,6 +21,7 @@ import sys
 import time
 import yaml
 import random
+import socket
 import warnings
 import datetime
 from copy import deepcopy
@@ -44,6 +45,7 @@ from multimae.models.input_adapters import PatchedInputAdapter, SemSegInputAdapt
 from multimae.models.output_adapters import SpatialOutputAdapter
 from multimae.utils import NativeScalerWithGradNormCount as NativeScaler
 from multimae.utils.model_builder import create_model
+from multimae.tools.load_multimae import MODELS
 from multimae.utils.data_constants import CUSTOM_SEMSEG_NUM_CLASSES, COCO_SEMSEG_NUM_CLASSES
 from multimae.utils.datasets import build_multimae_pretraining_dataset
 from multimae.utils.optim_factory import create_optimizer
@@ -131,6 +133,19 @@ def get_model(args):
         num_global_tokens=args.num_global_tokens,
         drop_path_rate=args.drop_path
     ) 
+    
+    if args.checkpoint_key in MODELS:
+        flightmare_path = Path(os.environ["FLIGHTMARE_PATH"])
+        multimae_path = flightmare_path.parent / "vision_backbones/MultiMAE"
+        server = socket.gethostname()
+        if server == "snaga":
+            multimae_path = Path("/data/storage/chunwei/multimae")
+            
+        pretrained_model_path = multimae_path / f"results/pretrain/{MODELS[args.checkpoint_key]}"
+        ckpt = torch.load(pretrained_model_path, map_location='cpu')
+        print("Model loaded from: ", pretrained_model_path)
+        
+        model.load_state_dict(ckpt['model'], strict=True)   
 
     return model
 

@@ -137,6 +137,8 @@ def get_args(no_command_line_args=False):
     parser.add_argument('--auto_resume', action='store_true')
     parser.add_argument('--no_auto_resume', action='store_false', dest='auto_resume')
     parser.set_defaults(auto_resume=True)
+    
+    parser.add_argument('--checkpoint_key', default=None, type=str, help='Key to use for checkpoint selection')
 
     parser.add_argument('--start_epoch', default=0, type=int, metavar='N', help='start epoch')
     parser.add_argument('--num_workers', default=10, type=int)

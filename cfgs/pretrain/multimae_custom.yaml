@@ -4,6 +4,7 @@ out_domains: rgb-depth-semseg
 standardize_depth: True
 extra_norm_pix_loss: True
 use_fake_semseg: True
+checkpoint_key: null
 
 # Architecture
 model: pretrain_multimae_base
@@ -39,7 +40,7 @@ eval_data_path: datasets/test_fake_semseg/val
 
 # Wandb logging
 log_wandb: True # Set to True to log to Weights & Biases
-wandb_project: debugging train_multimae_splits
+wandb_project: train_multimae_splits
 wandb_entity: xingcw # Change if needed
 wandb_log_dir: results
 wandb_log_img: True
