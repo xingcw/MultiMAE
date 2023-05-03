@@ -12,9 +12,9 @@
 # https://github.com/BUPT-PRIV/MAE-priv
 # --------------------------------------------------------
 
-import os
+import json
 import random
-
+from pathlib import Path
 import numpy as np
 from PIL import Image
 
@@ -28,6 +28,7 @@ from .data_constants import (IMAGE_TASKS, IMAGENET_DEFAULT_MEAN,
                              IMAGENET_DEFAULT_STD, IMAGENET_INCEPTION_MEAN,
                              IMAGENET_INCEPTION_STD)
 from .dataset_folder import ImageFolder, MultiTaskImageFolder
+from pipelines.utils.label_utils.semseg_from_corners import get_semseg_from_corners
 
 
 def denormalize(img, mean=IMAGENET_DEFAULT_MEAN, std=IMAGENET_DEFAULT_STD):
@@ -73,10 +74,24 @@ class DataAugmentationForMultiMAE(object):
         self.input_size = args.input_size
         self.hflip = args.hflip
         self.semseg_stride_level = args.semseg_stride_level
+        
+        # fake semseg from gate corners
+        self.aug_fake_semseg = args.aug_fake_semseg
+        dataset_folder = Path(args.data_path).parent
+        fake_semseg_label_path = dataset_folder / 'fake_semseg_labels.npz'
+        self.fake_semseg_labels = np.load(fake_semseg_label_path, allow_pickle=True)            
+        self.fake_semseg_labels = dict(self.fake_semseg_labels)
+        self.fake_semseg_labels = {k: np.array(v) for k, v in self.fake_semseg_labels.items()}
 
-    def __call__(self, task_dict):
+    def __call__(self, task_dict, **kwargs):
         flip = random.random() < self.hflip # Stores whether to flip all images or not
         ijhw = None # Stores crop coordinates used for all tasks
+        
+        if self.aug_fake_semseg:
+            path = kwargs['path']
+            corner_coords = self.fake_semseg_labels[path]
+            fake_semseg = get_semseg_from_corners(corner_coords)
+            task_dict['semseg'] = fake_semseg
         
         # Crop and flip all tasks randomly, but consistently for all tasks
         for task in task_dict:

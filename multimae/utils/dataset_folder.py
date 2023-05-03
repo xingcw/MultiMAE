@@ -304,7 +304,7 @@ class MultiTaskDatasetFolder(VisionDataset):
             # self.cache[index] = deepcopy((sample_dict, target))
 
         if self.transform is not None:
-            sample_dict = self.transform(sample_dict)
+            sample_dict = self.transform(sample_dict, path=path)
         if self.target_transform is not None:
             target = self.target_transform(target)
 

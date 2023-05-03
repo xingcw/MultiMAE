@@ -1,5 +1,6 @@
 import os
 import cv2
+import json
 import glob
 import shutil
 import socket
@@ -56,6 +57,7 @@ def extract_data_from_racing(
         os.makedirs(target_folder / "train/semseg_gt/data", exist_ok=True)
         os.makedirs(target_folder / "val/semseg_gt/data", exist_ok=True)
         use_fake_semseg = True
+        fake_semseg_labels = {}
         
     for env_id, env_folder in tqdm(enumerate(sorted(os.listdir(data_folder)))):
         current_step_id = 0
@@ -117,9 +119,14 @@ def extract_data_from_racing(
                     img.save(img_save_path, 'PNG')
                     
                     print(f"Generate fake semseg image and saved to {img_save_path}")
+                    
+                    fake_semseg_labels[str(rgb_path)] = gate_corner
                 
                 total_num_imgs += 1
                 current_step_id += 1
+                
+    fake_semseg_label_path = target_folder / "fake_semseg_labels.npz"
+    np.savez(fake_semseg_label_path, **fake_semseg_labels)
                 
     print(f"Total number of images: {total_num_imgs}")
     
@@ -159,7 +166,7 @@ if __name__ == "__main__":
     else:
         gate_corners = None
         
-    target_folder = multimae_path / "datasets/test_fake_semseg"
+    target_folder = multimae_path / "datasets/aug_fake_semseg"
     data_folder = data_folder / "data/data/epoch_0000"
     
     extract_data_from_racing(
