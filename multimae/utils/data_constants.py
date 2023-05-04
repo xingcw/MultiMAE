@@ -47,3 +47,7 @@ NYU_TEST_PATH = '/home/chunwei/Documents/drone_offboard/vision_backbones/MultiMA
 TASKONOMY_PATH = 'ADD_DATA_PATH_HERE'
 
 GATE_SEMSEG_CLASS_ID = 1
+CORNER_NOISE = 3
+
+RACING_IMG_WIDTH = 640
+RACING_IMG_HEIGHT = 480

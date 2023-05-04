@@ -12,7 +12,7 @@
 # https://github.com/BUPT-PRIV/MAE-priv
 # --------------------------------------------------------
 
-import json
+import re
 import random
 from pathlib import Path
 import numpy as np
@@ -26,7 +26,7 @@ from multimae.utils import create_transform
 
 from .data_constants import (IMAGE_TASKS, IMAGENET_DEFAULT_MEAN,
                              IMAGENET_DEFAULT_STD, IMAGENET_INCEPTION_MEAN,
-                             IMAGENET_INCEPTION_STD)
+                             IMAGENET_INCEPTION_STD, CORNER_NOISE, RACING_IMG_WIDTH, RACING_IMG_HEIGHT)
 from .dataset_folder import ImageFolder, MultiTaskImageFolder
 from pipelines.utils.label_utils.semseg_from_corners import get_semseg_from_corners
 
@@ -89,8 +89,16 @@ class DataAugmentationForMultiMAE(object):
         
         if self.aug_fake_semseg:
             path = kwargs['path']
-            corner_coords = self.fake_semseg_labels[path]
+            img_id = Path(path).stem
+            corner_coords = self.fake_semseg_labels[img_id]
+            # apply augmentation by adding noise to the corners
+            corner_coords = corner_coords.astype(float)
+            corner_coords += np.random.uniform(-CORNER_NOISE, CORNER_NOISE, size=corner_coords.shape)
+            corner_coords[:, 0, :] = np.clip(corner_coords[:, 0, :], 0, RACING_IMG_WIDTH)
+            corner_coords[:, 1, :] = np.clip(corner_coords[:, 1, :], 0, RACING_IMG_HEIGHT)
+            corner_coords = np.array(corner_coords).astype(int)
             fake_semseg = get_semseg_from_corners(corner_coords)
+            fake_semseg = Image.fromarray(fake_semseg).convert('P')
             task_dict['semseg'] = fake_semseg
         
         # Crop and flip all tasks randomly, but consistently for all tasks

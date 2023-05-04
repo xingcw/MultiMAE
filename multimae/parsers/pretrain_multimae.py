@@ -35,6 +35,8 @@ def get_args(no_command_line_args=False):
     parser.set_defaults(extra_norm_pix_loss=True)
     parser.add_argument('--use_fake_semseg', action='store_true', dest='use_fake_semseg', help='Use fake semantic segmentation masks.')
     parser.set_defaults(use_fake_semseg=False)
+    parser.add_argument("--aug_fake_semseg", action="store_true", dest="aug_fake_semseg", help="Augment fake semantic segmentation masks.")
+    parser.set_defaults(aug_fake_semseg=False)
 
 
     # Model parameters

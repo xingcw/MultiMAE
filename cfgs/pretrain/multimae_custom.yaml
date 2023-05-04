@@ -1,10 +1,11 @@
 # Input and output tasks
-in_domains: rgb
-out_domains: rgb
-standardize_depth: False
+in_domains: semseg
+out_domains: rgb-depth-semseg
+standardize_depth: True
 extra_norm_pix_loss: True
-use_fake_semseg: False
-checkpoint_key: null
+use_fake_semseg: True
+aug_fake_semseg: True
+checkpoint_key: fake-semseg
 
 # Architecture
 model: pretrain_multimae_base
@@ -30,19 +31,19 @@ min_lr: 0.
 warmup_epochs: 40
 batch_size: 256
 hflip: 0.5
-loss_on_unmasked: rgb
+loss_on_unmasked: depth-semseg
 fp32_output_adapters: semseg
 eval_freq: 50
 
 # Data
-data_path: datasets/tracks_all/train # Change me
-eval_data_path: datasets/tracks_all/val
+data_path: datasets/aug_fake_semseg/train # Change me
+eval_data_path: datasets/aug_fake_semseg/val
 
 # Wandb logging
 log_wandb: True # Set to True to log to Weights & Biases
-wandb_project: train-multimae_splits-figure8
+wandb_project: train_multimae_splits
 wandb_entity: xingcw # Change if needed
 wandb_log_dir: results
 wandb_log_img: True
-wandb_run_name: rgb_autoencoder
+wandb_run_name: aug-fake-semseg
 output_dir: results/pretrain # Change directory if needed

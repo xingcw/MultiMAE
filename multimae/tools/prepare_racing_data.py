@@ -9,7 +9,7 @@ import numpy as np
 from tqdm import tqdm
 from PIL import Image
 from pathlib import Path
-from multimae.utils.data_constants import GATE_SEMSEG_CLASS_ID
+from multimae.utils.data_constants import GATE_SEMSEG_CLASS_ID, RACING_IMG_WIDTH, RACING_IMG_HEIGHT
 from pipelines.utils.constants import DEPTH_MAP_SCALE
 from pipelines.utils.label_utils.semseg_from_corners import draw_polygon
 
@@ -72,57 +72,70 @@ def extract_data_from_racing(
                     
                 old_file_name = Path(file).stem.strip()
                 save_id = total_num_imgs + num_shift
+                save_current_img = True
                 
-                # copy rgb image
-                rgb_path = sample_folder / f"{old_file_name}_rgb.png"
-                new_rgb_path = target_folder / f"{split}/rgb/data/{save_id:06d}.png"
-                shutil.copy2(rgb_path, new_rgb_path)
-                # print(f"Copying {old_file_name} to {new_rgb_path}")
-                
-                # copy semseg image
-                semseg_path = sample_folder / f"{old_file_name}_semseg.png"
-                semseg_folder = "semseg_gt" if use_fake_semseg else "semseg"
-                new_semseg_path = target_folder / f"{split}/{semseg_folder}/data/{save_id:06d}.png"
-                shutil.copy2(semseg_path, new_semseg_path)
-                # print(f"Copying {old_file_name} to {new_semseg_path}")
-                
-                # convert and copy depth image
-                depth_path = sample_folder / f"{old_file_name}_depth.npy"
-                depth = np.load(depth_path)
-                
-                if depth_format == "tiff":
-                    depth_img = Image.fromarray(depth.squeeze())
-                    new_depth_path = target_folder / f"{split}/depth/data/{save_id:06d}.tiff"
-                    depth_img.save(new_depth_path)
-                    
-                elif depth_format == "png":
-                    normalized_depth = depth / DEPTH_MAP_SCALE
-                    normalized_depth = np.clip(normalized_depth, 0, 1)
-                    depth_int16 = np.round(normalized_depth * 65535).astype(np.uint16)
-                    new_depth_path = str(target_folder / f"{split}/depth/data/{save_id:06d}.png")
-                    cv2.imwrite(new_depth_path, depth_int16)
-                else:
-                    raise KeyError(f"Depth format {depth_format} not supported.")
-                    
-                print(f"Copying {old_file_name} to {new_depth_path}")
-                
+                # first check if the gate is visible in the image
                 if gate_corners is not None:
                     # generate fake semseg image from corners
                     gate_corner = gate_corners[current_step_id, env_id, :, :, :]
-                    img = Image.new('L', (depth.shape[1], depth.shape[0]), 0)
+                    img = Image.new('L', (RACING_IMG_WIDTH, RACING_IMG_HEIGHT), 0)
                     
-                    for i in range(gate_corner.shape[0]):
-                        corners = gate_corner[i].flatten().reshape(4, 2, order='F')
-                        img = draw_polygon(corners, 4, img=img, fill_value=GATE_SEMSEG_CLASS_ID)
+                    x_inside_img = np.logical_and(gate_corner[:, 0, :] > 0, gate_corner[:, 0, :] < RACING_IMG_WIDTH - 1)
+                    y_inside_img = np.logical_and(gate_corner[:, 1, :] > 0, gate_corner[:, 1, :] < RACING_IMG_HEIGHT - 1)
+                    xy_inside_img = np.logical_and(x_inside_img, y_inside_img).any()
+                    save_current_img = xy_inside_img
+                    
+                    if save_current_img:
+                        for i in range(gate_corner.shape[0]):
+                            corners = gate_corner[i].flatten().reshape(4, 2, order='F')
+                            img = draw_polygon(corners, 4, img=img, fill_value=GATE_SEMSEG_CLASS_ID)
+                            
+                        img_save_path = target_folder / f"{split}/semseg/data/{save_id:06d}.png"
+                        img.save(img_save_path, 'PNG')
                         
-                    img_save_path = target_folder / f"{split}/semseg/data/{save_id:06d}.png"
-                    img.save(img_save_path, 'PNG')
-                    
-                    print(f"Generate fake semseg image and saved to {img_save_path}")
-                    
-                    fake_semseg_labels[str(rgb_path)] = gate_corner
+                        print(f"Generate fake semseg image and saved to {img_save_path}")
+                        
+                        fake_semseg_labels[f"{save_id:06d}"] = gate_corner
+                        
+                    else:
+                        print(f"Gate not visible in env {env_id}, {trial_folder}, {old_file_name}")
                 
-                total_num_imgs += 1
+                if save_current_img:
+                    # copy rgb image
+                    rgb_path = sample_folder / f"{old_file_name}_rgb.png"
+                    new_rgb_path = target_folder / f"{split}/rgb/data/{save_id:06d}.png"
+                    shutil.copy2(rgb_path, new_rgb_path)
+                    # print(f"Copying {old_file_name} to {new_rgb_path}")
+                    
+                    # copy semseg image
+                    semseg_path = sample_folder / f"{old_file_name}_semseg.png"
+                    semseg_folder = "semseg_gt" if use_fake_semseg else "semseg"
+                    new_semseg_path = target_folder / f"{split}/{semseg_folder}/data/{save_id:06d}.png"
+                    shutil.copy2(semseg_path, new_semseg_path)
+                    # print(f"Copying {old_file_name} to {new_semseg_path}")
+                    
+                    # convert and copy depth image
+                    depth_path = sample_folder / f"{old_file_name}_depth.npy"
+                    depth = np.load(depth_path)
+                    
+                    if depth_format == "tiff":
+                        depth_img = Image.fromarray(depth.squeeze())
+                        new_depth_path = target_folder / f"{split}/depth/data/{save_id:06d}.tiff"
+                        depth_img.save(new_depth_path)
+                        
+                    elif depth_format == "png":
+                        normalized_depth = depth / DEPTH_MAP_SCALE
+                        normalized_depth = np.clip(normalized_depth, 0, 1)
+                        depth_int16 = np.round(normalized_depth * 65535).astype(np.uint16)
+                        new_depth_path = str(target_folder / f"{split}/depth/data/{save_id:06d}.png")
+                        cv2.imwrite(new_depth_path, depth_int16)
+                    else:
+                        raise KeyError(f"Depth format {depth_format} not supported.")
+                        
+                    print(f"Copying {old_file_name} to {new_depth_path}")
+                    
+                    total_num_imgs += 1
+                    
                 current_step_id += 1
                 
     fake_semseg_label_path = target_folder / "fake_semseg_labels.npz"
@@ -139,7 +152,7 @@ if __name__ == "__main__":
     parser.add_argument("--sample_method", "-s", type=str, default="random", help="method to sample the data")
     parser.add_argument("--train_val_split", "-tv", type=float, default=0.8, help="fraction of data to use for training")
     parser.add_argument("--num_shift", "-ns", type=int, default=0, help="number of images to shift the ids")
-    parser.add_argument("--timestamp", "-ts", type=str, default=None, help="timestamp of the data")
+    parser.add_argument("--timestamp", "-ts", type=str, default="04-11-11-16-37", help="timestamp of the data")
     args = parser.parse_args()
     
     data_lookup = {
@@ -148,7 +161,8 @@ if __name__ == "__main__":
         "circle": "Circle_small_demo",
     }    
     
-    flightmare_path = Path(os.environ["FLIGHTMARE_PATH"])
+    # flightmare_path = Path(os.environ["FLIGHTMARE_PATH"])
+    flightmare_path = Path("/home/chunwei/flight/flightmare")
     multimae_path = flightmare_path.parent / "vision_backbones/MultiMAE"
     dataset_folder = flightmare_path / f"flightpy/datasets"
     
