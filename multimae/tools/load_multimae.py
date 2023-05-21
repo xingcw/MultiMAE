@@ -60,6 +60,7 @@ MODELS = {
         "depth-semseg_semseg-clean": "04-06-22-15-23/checkpoint-999.pth",
         "rgb-semseg_semseg-clean": "04-06-22-24-49/checkpoint-999.pth",
         "fake-semseg": "04-11-18-23-56/checkpoint-999.pth",
+        "aug-fake-semseg": "05-04-00-21-05/checkpoint-999.pth",
         "rgb_ae": "04-13-15-44-55/checkpoint-999.pth",
 }
 
