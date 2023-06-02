@@ -4,8 +4,7 @@ import socket
 import datetime
 import argparse
 from pathlib import Path
-from multimae.utils.data_constants import IMAGENET_TRAIN_PATH, IMAGENET_VAL_PATH
-from pipelines.utils.constants import SERVERS
+from multimae.utils.data_constants import IMAGENET_TRAIN_PATH, IMAGENET_VAL_PATH, SERVERS
 
 
 def get_args(no_command_line_args=False):

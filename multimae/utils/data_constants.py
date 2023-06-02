@@ -51,3 +51,12 @@ CORNER_NOISE = 3
 
 RACING_IMG_WIDTH = 640
 RACING_IMG_HEIGHT = 480
+
+SERVERS = {
+    "lenovo": "lenovo",
+    "chunwei-GJ5CN64": "boat",
+    "snaga": "snaga",
+    "viper": "viper",
+    "jiaxu": "jiaxu",
+    "Yunlong": "yunlong"
+}
